@@ -1,0 +1,9 @@
+{
+  "dataUpdateInterval": 2000,
+  "maxDataPoints": 100,
+  "autoSave": true,
+  "modbusTimeout": 10000,
+  "retryCount": 5,
+  "logLevel": "DEBUG",
+  "enableWebSocket": true
+}

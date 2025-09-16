@@ -1,0 +1,23 @@
+[
+  {
+    "parameter": "SO2",
+    "unit": "ppm",
+    "warningThreshold": 50.0,
+    "dangerThreshold": 100.0,
+    "enabled": true
+  },
+  {
+    "parameter": "NOx",
+    "unit": "ppm",
+    "warningThreshold": 100.0,
+    "dangerThreshold": 200.0,
+    "enabled": true
+  },
+  {
+    "parameter": "O2",
+    "unit": "%",
+    "warningThreshold": 15.0,
+    "dangerThreshold": 20.0,
+    "enabled": true
+  }
+]

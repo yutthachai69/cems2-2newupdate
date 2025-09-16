@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CEMS API Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .container { max-width: 800px; margin: 0 auto; }
+        .test-section { margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 5px; }
+        .success { color: green; }
+        .error { color: red; }
+        .warning { color: orange; }
+        button { padding: 10px 15px; margin: 5px; background: #007bff; color: white; border: none; border-radius: 3px; cursor: pointer; }
+        button:hover { background: #0056b3; }
+        pre { background: #f5f5f5; padding: 10px; border-radius: 3px; overflow-x: auto; }
+        .status { margin: 10px 0; padding: 10px; border-radius: 3px; }
+        .status.success { background: #d4edda; border: 1px solid #c3e6cb; }
+        .status.error { background: #f8d7da; border: 1px solid #f5c6cb; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔧 CEMS API Configuration Test</h1>
+        
+        <div class="test-section">
+            <h3>📋 Configuration Status</h3>
+            <button onclick="testConfig()">Test Configuration</button>
+            <button onclick="reloadConfig()">Reload Configuration</button>
+            <div id="configStatus"></div>
+        </div>
+        
+        <div class="test-section">
+            <h3>🔌 Device Connection Test</h3>
+            <button onclick="testDeviceConnection()">Test Device Connection</button>
+            <div id="deviceStatus"></div>
+        </div>
+        
+        <div class="test-section">
+            <h3>📊 Data Fetch Test</h3>
+            <button onclick="testDataFetch()">Test Data Fetch</button>
+            <div id="dataStatus"></div>
+        </div>
+        
+        <div class="test-section">
+            <h3>📝 Configuration Files</h3>
+            <button onclick="viewConfigFiles()">View Configuration Files</button>
+            <div id="configFiles"></div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://127.0.0.1:8000';
+        
+        async function apiCall(url, options = {}) {
+            try {
+                const response = await fetch(`${API_BASE}${url}`, {
+                    headers: {
+                        'Content-Type': 'application/json',
+                        ...options.headers
+                    },
+                    ...options
+                });
+                const data = await response.json();
+                return { success: response.ok, data, status: response.status };
+            } catch (error) {
+                return { success: false, error: error.message };
+            }
+        }
+        
+        function showStatus(elementId, message, type = 'success') {
+            const element = document.getElementById(elementId);
+            element.innerHTML = `<div class="status ${type}">${message}</div>`;
+        }
+        
+        async function testConfig() {
+            showStatus('configStatus', 'Testing configuration...', 'warning');
+            
+            const devices = await apiCall('/api/config/devices');
+            const mappings = await apiCall('/api/config/mappings');
+            
+            let status = '';
+            if (devices.success && mappings.success) {
+                status += `<div class="success">✅ Devices loaded: ${devices.data.devices.length} devices</div>`;
+                status += `<div class="success">✅ Mappings loaded: ${mappings.data.mappings.length} mappings</div>`;
+                
+                if (devices.data.devices.length === 0) {
+                    status += `<div class="warning">⚠️ No devices configured</div>`;
+                }
+                if (mappings.data.mappings.length === 0) {
+                    status += `<div class="warning">⚠️ No mappings configured</div>`;
+                }
+            } else {
+                status += `<div class="error">❌ Failed to load configuration</div>`;
+                if (!devices.success) status += `<div class="error">Devices error: ${devices.error || devices.data}</div>`;
+                if (!mappings.success) status += `<div class="error">Mappings error: ${mappings.error || mappings.data}</div>`;
+            }
+            
+            showStatus('configStatus', status, devices.success && mappings.success ? 'success' : 'error');
+        }
+        
+        async function reloadConfig() {
+            showStatus('configStatus', 'Reloading configuration...', 'warning');
+            
+            const result = await apiCall('/api/config/reload', { method: 'POST' });
+            
+            if (result.success) {
+                showStatus('configStatus', '✅ Configuration reloaded successfully', 'success');
+            } else {
+                showStatus('configStatus', `❌ Failed to reload configuration: ${result.error || result.data}`, 'error');
+            }
+        }
+        
+        async function testDeviceConnection() {
+            showStatus('deviceStatus', 'Testing device connection...', 'warning');
+            
+            const devices = await apiCall('/api/config/devices');
+            if (!devices.success || devices.data.devices.length === 0) {
+                showStatus('deviceStatus', '❌ No devices configured to test', 'error');
+                return;
+            }
+            
+            const device = devices.data.devices[0];
+            const result = await apiCall('/api/modbus/test-connection', {
+                method: 'POST',
+                body: JSON.stringify({ name: device.name })
+            });
+            
+            if (result.success && result.data.success) {
+                showStatus('deviceStatus', `✅ Connection to ${device.name} successful`, 'success');
+            } else {
+                showStatus('deviceStatus', `❌ Connection to ${device.name} failed: ${result.error || result.data?.message || 'Unknown error'}`, 'error');
+            }
+        }
+        
+        async function testDataFetch() {
+            showStatus('dataStatus', 'Testing data fetch...', 'warning');
+            
+            const result = await apiCall('/api/data/latest/stack1');
+            
+            if (result.success) {
+                const data = result.data;
+                let status = `<div class="success">✅ Data fetched successfully</div>`;
+                status += `<div>Stack: ${data.stack_name || 'Unknown'}</div>`;
+                status += `<div>Status: ${data.status || 'Unknown'}</div>`;
+                if (data.data) {
+                    status += `<div>Latest data timestamp: ${data.data.timestamp || 'Unknown'}</div>`;
+                }
+                showStatus('dataStatus', status, 'success');
+            } else {
+                showStatus('dataStatus', `❌ Failed to fetch data: ${result.error || result.data}`, 'error');
+            }
+        }
+        
+        async function viewConfigFiles() {
+            showStatus('configFiles', 'Loading configuration files...', 'warning');
+            
+            const devices = await apiCall('/api/config/devices');
+            const mappings = await apiCall('/api/config/mappings');
+            
+            let content = '';
+            if (devices.success) {
+                content += '<h4>Devices Configuration:</h4>';
+                content += `<pre>${JSON.stringify(devices.data, null, 2)}</pre>`;
+            }
+            if (mappings.success) {
+                content += '<h4>Mappings Configuration:</h4>';
+                content += `<pre>${JSON.stringify(mappings.data, null, 2)}</pre>`;
+            }
+            
+            showStatus('configFiles', content, 'success');
+        }
+        
+        // Auto-test on page load
+        window.onload = function() {
+            testConfig();
+        };
+    </script>
+</body>
+</html>
+
+
+
+
+

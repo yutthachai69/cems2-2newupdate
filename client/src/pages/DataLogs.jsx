@@ -45,40 +45,46 @@ export default function DataLogs() {
   const fetchData = useCallback(async () => {
     try {
       setIsLoading(true);
-      const response = await fetch(`${API}/api/sqlite/data/range?limit=100`);
+      const response = await fetch(`${API}/api/influxdb/data/aggregate/stack1?hours=24&interval=1m`);
       const result = await response.json();
 
       const toLocalTs = (iso) => {
         const date = new Date(iso);
-        return date
-          .toLocaleString("th-TH", {
-            year: "numeric",
-            month: "2-digit",
-            day: "2-digit",
-            hour: "2-digit",
-            minute: "2-digit",
-            second: "2-digit",
-            timeZone: "Asia/Bangkok",
-            hour12: false,
-          })
-          .replace(
-            /(\d{1,2})\/(\d{1,2})\/(\d{4}),?\s*(\d{2}):(\d{2}):(\d{2})/,
-            "$3-$2-$1 $4:$5:$6"
-          );
+        // ปัดวินาทีทิ้งให้เป็นนาทีตรง
+        date.setSeconds(0, 0);
+        return new Intl.DateTimeFormat('th-TH-u-ca-gregory', {
+          year: 'numeric', 
+          month: '2-digit', 
+          day: '2-digit',
+          hour: '2-digit', 
+          minute: '2-digit',
+          hour12: false, 
+          timeZone: 'Asia/Bangkok'
+        }).format(date).replace(
+          /(\d{1,2})\/(\d{1,2})\/(\d{4}),?\s*(\d{2}):(\d{2})/,
+          "$3-$2-$1 $4:$5"
+        );
+      };
+
+      // จัดรูปแบบตัวเลข: 0 -> "0", จำนวนเต็ม -> ไม่มี .00, ทศนิยม -> 2 ตำแหน่ง
+      const formatValue = (v) => {
+        const n = Number(v);
+        if (!isFinite(n) || n === 0) return "0";
+        return Number.isInteger(n) ? String(n) : n.toFixed(2);
       };
       
       if (result.success && result.data) {
         const formatted = result.data.map((item) => ({
           Timestamp: toLocalTs(item.timestamp),
-          "SO2 (ppm)": item.SO2 || 0,
-          "NOx (ppm)": item.NOx || 0,
-          "O2 (%)": item.O2 || 0,
-          "CO (ppm)": item.CO || 0,
-          "Dust (mg/m3)": item.Dust || 0,
-          "Temperature (°C)": item.Temperature || 0,
-          "Velocity (m/s)": item.Velocity || 0,
-          "Flowrate (m3/h)": item.Flowrate || 0,
-          "Pressure (Pa)": item.Pressure || 0,
+          "SO2 (ppm)": formatValue(item.SO2),
+          "NOx (ppm)": formatValue(item.NOx),
+          "O2 (%)": formatValue(item.O2),
+          "CO (ppm)": formatValue(item.CO),
+          "Dust (mg/m3)": formatValue(item.Dust),
+          "Temperature (°C)": formatValue(item.Temperature),
+          "Velocity (m/s)": formatValue(item.Velocity),
+          "Flowrate (m3/h)": formatValue(item.Flowrate),
+          "Pressure (Pa)": formatValue(item.Pressure),
         }));
         setPreview(formatted);
         setTotalRecords(result.count || formatted.length || 0);
@@ -132,15 +138,15 @@ export default function DataLogs() {
 
           const formatted = result.data.map((item) => ({
             Timestamp: toLocalTs(item.timestamp),
-            "SO2 (ppm)": item.SO2 || 0,
-            "NOx (ppm)": item.NOx || 0,
-            "O2 (%)": item.O2 || 0,
-            "CO (ppm)": item.CO || 0,
-            "Dust (mg/m3)": item.Dust || 0,
-            "Temperature (°C)": item.Temperature || 0,
-            "Velocity (m/s)": item.Velocity || 0,
-            "Flowrate (m3/h)": item.Flowrate || 0,
-            "Pressure (Pa)": item.Pressure || 0,
+            "SO2 (ppm)": item.SO2 ? Number(item.SO2).toFixed(2) : "0.00",
+            "NOx (ppm)": item.NOx ? Number(item.NOx).toFixed(2) : "0.00",
+            "O2 (%)": item.O2 ? Number(item.O2).toFixed(2) : "0.00",
+            "CO (ppm)": item.CO ? Number(item.CO).toFixed(2) : "0.00",
+            "Dust (mg/m3)": item.Dust ? Number(item.Dust).toFixed(2) : "0.00",
+            "Temperature (°C)": item.Temperature ? Number(item.Temperature).toFixed(2) : "0.00",
+            "Velocity (m/s)": item.Velocity ? Number(item.Velocity).toFixed(2) : "0.00",
+            "Flowrate (m3/h)": item.Flowrate ? Number(item.Flowrate).toFixed(2) : "0.00",
+            "Pressure (Pa)": item.Pressure ? Number(item.Pressure).toFixed(2) : "0.00",
           }));
           setPreview(formatted);
           setTotalRecords(result.count || formatted.length || 0);
@@ -200,15 +206,15 @@ export default function DataLogs() {
       if (result.success && result.data) {
         const formatted = result.data.map((item) => ({
           Timestamp: toLocalTs(item.timestamp),
-          "SO2 (ppm)": item.SO2 || 0,
-          "NOx (ppm)": item.NOx || 0,
-          "O2 (%)": item.O2 || 0,
-          "CO (ppm)": item.CO || 0,
-          "Dust (mg/m3)": item.Dust || 0,
-          "Temperature (°C)": item.Temperature || 0,
-          "Velocity (m/s)": item.Velocity || 0,
-          "Flowrate (m3/h)": item.Flowrate || 0,
-          "Pressure (Pa)": item.Pressure || 0,
+          "SO2 (ppm)": item.SO2 ? Number(item.SO2).toFixed(2) : "0.00",
+          "NOx (ppm)": item.NOx ? Number(item.NOx).toFixed(2) : "0.00",
+          "O2 (%)": item.O2 ? Number(item.O2).toFixed(2) : "0.00",
+          "CO (ppm)": item.CO ? Number(item.CO).toFixed(2) : "0.00",
+          "Dust (mg/m3)": item.Dust ? Number(item.Dust).toFixed(2) : "0.00",
+          "Temperature (°C)": item.Temperature ? Number(item.Temperature).toFixed(2) : "0.00",
+          "Velocity (m/s)": item.Velocity ? Number(item.Velocity).toFixed(2) : "0.00",
+          "Flowrate (m3/h)": item.Flowrate ? Number(item.Flowrate).toFixed(2) : "0.00",
+          "Pressure (Pa)": item.Pressure ? Number(item.Pressure).toFixed(2) : "0.00",
         }));
         setPreview(formatted);
         setTotalRecords(result.count || formatted.length || 0);
@@ -298,14 +304,42 @@ export default function DataLogs() {
       const result = await response.json();
       
       if (result.success) {
-        // สร้างไฟล์จากข้อมูลที่ได้รับ
-        const blob = new Blob([result.data], { type: 'text/csv' });
+        // Handle different file formats
+        let blob;
+        let mimeType;
+        
+        if (downloadSettings.fileFormat === 'excel') {
+          // Decode base64 for Excel
+          const binaryString = atob(result.data);
+          const bytes = new Uint8Array(binaryString.length);
+          for (let i = 0; i < binaryString.length; i++) {
+            bytes[i] = binaryString.charCodeAt(i);
+          }
+          blob = new Blob([bytes], { 
+            type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
+          });
+          mimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+        } else if (downloadSettings.fileFormat === 'pdf') {
+          // Decode base64 for PDF
+          const binaryString = atob(result.data);
+          const bytes = new Uint8Array(binaryString.length);
+          for (let i = 0; i < binaryString.length; i++) {
+            bytes[i] = binaryString.charCodeAt(i);
+          }
+          blob = new Blob([bytes], { type: 'application/pdf' });
+          mimeType = 'application/pdf';
+        } else {
+          // CSV format (text)
+          blob = new Blob([result.data], { type: 'text/csv' });
+          mimeType = 'text/csv';
+        }
+        
         const url = URL.createObjectURL(blob);
         
         // สร้างลิงก์ดาวน์โหลด
         const link = document.createElement('a');
         link.href = url;
-        link.download = result.filename || `cems-data-${downloadSettings.fileFormat}`;
+        link.download = result.filename || `cems-data.${downloadSettings.fileFormat}`;
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);

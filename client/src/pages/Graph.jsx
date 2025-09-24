@@ -319,7 +319,21 @@ export default function Graph() {
   const fetchingRef = useRef(false);
   const modalCanvasRef = useRef(null);
   
-  const [series, setSeries] = useState([
+  const [series, setSeries] = useState(() => {
+    // โหลดข้อมูลจาก localStorage เมื่อ component mount
+    try {
+      const saved = localStorage.getItem('cems_graph_data');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        console.log("📊 Loaded graph data from localStorage:", parsed.length, "series");
+        return parsed;
+      }
+    } catch (error) {
+      console.warn("⚠️ Error loading graph data from localStorage:", error);
+    }
+    
+    // ค่าเริ่มต้นถ้าไม่มีข้อมูลใน localStorage
+    return [
     { name: "SO2", unit: "ppm", data: [], color: "#10b981" },
     { name: "NOx", unit: "ppm", data: [], color: "#3b82f6" },
     { name: "O2", unit: "%", data: [], color: "#eab308" },
@@ -329,14 +343,26 @@ export default function Graph() {
     { name: "Velocity", unit: "m/s", data: [], color: "#8b5cf6" },
     { name: "Flowrate", unit: "m³/h", data: [], color: "#06b6d4" },
     { name: "Pressure", unit: "Pa", data: [], color: "#ec4899" },
-  ]);
+    ];
+  });
 
   const API = import.meta.env.VITE_BACKEND_URL || "http://127.0.0.1:8000";
+const WS_URL = import.meta.env.VITE_WS_URL || "ws://127.0.0.1:8000";
   
   // ตรวจสอบว่า API URL ถูกต้องหรือไม่
   if (!API || API === "undefined") {
     console.warn("API URL is not properly configured");
   }
+
+  // บันทึกข้อมูลกราฟลง localStorage ทุกครั้งที่ series เปลี่ยน
+  useEffect(() => {
+    try {
+      localStorage.setItem('cems_graph_data', JSON.stringify(series));
+      console.log("💾 Saved graph data to localStorage:", series.length, "series");
+    } catch (error) {
+      console.warn("⚠️ Error saving graph data to localStorage:", error);
+    }
+  }, [series]);
 
   // ฟังก์ชันตัดข้อมูลเก่า + บีบจำนวนจุด (เก็บข้อมูลเก่าไว้มากขึ้น)
   const pruneWindow = (points, now, windowMs, maxPoints) => {
@@ -366,10 +392,46 @@ export default function Graph() {
     return pruned;
   };
 
+  // ฟังก์ชันสำหรับเก็บข้อมูลเก่าไว้มากขึ้น (สำหรับ localStorage)
+  const preserveHistoricalData = (points, now, maxHistoricalPoints = 5000) => {
+    // เก็บข้อมูลเก่าไว้มากขึ้น - จำกัดแค่จำนวนจุดสูงสุด
+    if (points.length > maxHistoricalPoints) {
+      // เก็บข้อมูลล่าสุด 80% และข้อมูลเก่า 20%
+      const recentCount = Math.floor(maxHistoricalPoints * 0.8);
+      const oldCount = Math.floor(maxHistoricalPoints * 0.2);
+      
+      const recent = points.slice(-recentCount);
+      const old = points.slice(0, oldCount);
+      
+      return [...old, ...recent];
+    }
+    
+    return points;
+  };
+
   // ฟังก์ชันเปิด Modal
   const openModal = (series) => {
     setModalSeries(series);
     setModalOpen(true);
+  };
+
+  // ฟังก์ชันล้างข้อมูลกราฟ
+  const clearGraphData = () => {
+    const emptySeries = [
+      { name: "SO2", unit: "ppm", data: [], color: "#10b981" },
+      { name: "NOx", unit: "ppm", data: [], color: "#3b82f6" },
+      { name: "O2", unit: "%", data: [], color: "#eab308" },
+      { name: "CO", unit: "ppm", data: [], color: "#f59e0b" },
+      { name: "Dust", unit: "mg/m³", data: [], color: "#ef4444" },
+      { name: "Temperature", unit: "°C", data: [], color: "#f97316" },
+      { name: "Velocity", unit: "m/s", data: [], color: "#8b5cf6" },
+      { name: "Flowrate", unit: "m³/h", data: [], color: "#06b6d4" },
+      { name: "Pressure", unit: "Pa", data: [], color: "#ec4899" },
+    ];
+    
+    setSeries(emptySeries);
+    localStorage.removeItem('cems_graph_data');
+    console.log("🗑️ Cleared graph data");
   };
 
   // ฟังก์ชันปิด Modal
@@ -755,13 +817,147 @@ export default function Graph() {
     fetchData();
   }, [selectedStack, timeRange, fetchData]);
 
-  // อัพเดทข้อมูลเรียลไทม์ (ทุกโหมด) - อัปเดตทุก 5 วินาที
+  // WebSocket connection for real-time data - ใช้วิธีง่ายๆ
   useEffect(() => {
-    if (!running) return;
-    const interval = timeRange === "realtime" ? 5000 : 10000; // อัปเดตทุก 5 วินาทีสำหรับ realtime, 10 วินาทีสำหรับ historical
-    const id = setInterval(fetchData, interval);
-    return () => clearInterval(id);
-  }, [running, selectedStack, timeRange, liveWindowMs, fetchData]);
+    if (timeRange !== "realtime") return;
+
+    let ws = null;
+    let reconnectTimeout = null;
+    let isMounted = true;
+
+    const connect = () => {
+      // ป้องกันการเชื่อมต่อเมื่อ component unmount
+      if (!isMounted) {
+        console.log("Component unmounted, skipping WebSocket connection");
+        return;
+      }
+      
+      if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
+        return;
+      }
+
+      console.log("🔌 Graph connecting to WebSocket:", `${WS_URL}/ws/data`);
+      ws = new WebSocket(`${WS_URL}/ws/data`);
+
+      ws.onopen = () => {
+        console.log("Graph WebSocket connected");
+        setIsConnected(true);
+        // Send initial data request
+        try {
+          ws.send(JSON.stringify({ type: "get_latest_data" }));
+          console.log("📤 Graph sent initial data request");
+        } catch (error) {
+          console.error("❌ Error sending initial data request:", error);
+        }
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const message = JSON.parse(event.data);
+          console.log("Graph WebSocket data received:", message);
+          
+          if (message.type === "data" && message.data && message.data.length > 0) {
+            const stackData = message.data[0];
+            
+            // ตรวจสอบโครงสร้างข้อมูล
+            if (!stackData.data || !stackData.corrected_data) {
+              console.warn("⚠️ Missing data or corrected_data in WebSocket message");
+              return;
+            }
+            
+            const data = stackData.data;
+            const correctedData = stackData.corrected_data;
+            const now = Date.now();
+            
+            console.log("🔍 Raw data:", data);
+            console.log("🔍 Corrected data:", correctedData);
+            
+            // อัพเดทข้อมูลสำหรับแต่ละ series
+            setSeries(prevSeries => {
+              return prevSeries.map(s => {
+                let value = 0;
+                
+                try {
+                  if (s.name.includes("Corr") && correctedData) {
+                    const baseName = s.name.replace("Corr", "");
+                    value = correctedData[baseName] !== undefined ? correctedData[baseName] : 0;
+                    console.log(`📊 ${s.name} (${baseName}):`, value);
+                  } else {
+                    value = data[s.name] !== undefined ? data[s.name] : 0;
+                    console.log(`📊 ${s.name}:`, value);
+                  }
+                  
+                  if (typeof value !== 'number' || isNaN(value)) {
+                    console.warn(`⚠️ Invalid value for ${s.name}:`, value);
+                    value = 0;
+                  }
+                } catch (error) {
+                  console.error(`❌ Error processing ${s.name}:`, error);
+                  value = 0;
+                }
+                
+                // เพิ่มจุดใหม่เข้าไปในข้อมูลเก่า
+                const newData = [...(s.data || []), { t: now, y: value }];
+                
+                // เก็บข้อมูลเก่าไว้มากขึ้นสำหรับ localStorage
+                const preservedData = preserveHistoricalData(newData, now, 5000);
+                
+                return {
+                  ...s,
+                  data: preservedData
+                };
+              });
+            });
+            
+            setLastUpdate(new Date());
+            setIsConnected(true);
+          }
+        } catch (error) {
+          console.error("Error parsing Graph WebSocket message:", error);
+        }
+      };
+
+      ws.onerror = (e) => {
+        if (!isMounted) return;
+        console.warn("⚠️ Graph WebSocket error:", e);
+        setIsConnected(false);
+      };
+
+      ws.onclose = (e) => {
+        if (!isMounted) return;
+        console.warn("🔌 Graph WebSocket closed", {
+          code: e.code,
+          reason: e.reason,
+          wasClean: e.wasClean
+        });
+        ws = null;
+        setIsConnected(false);
+        
+        // Only reconnect if not a clean close and component is still mounted
+        if (e.code !== 1000 && isMounted) {
+          console.log("🔄 Graph scheduling reconnect in 3s...");
+          reconnectTimeout = setTimeout(connect, 3000);
+        }
+      };
+    };
+
+    connect();
+
+    return () => {
+      console.log("🧹 Graph cleaning up WebSocket connection");
+      isMounted = false;
+      
+      if (reconnectTimeout) {
+        clearTimeout(reconnectTimeout);
+        reconnectTimeout = null;
+      }
+      
+      if (ws) {
+        ws.close(1000, "Component unmounting");
+        ws = null;
+      }
+    };
+  }, [timeRange, selectedStack]);
 
   // รีเฟรชข้อมูลเมื่อเปลี่ยน Live Window
   useEffect(() => {
@@ -856,15 +1052,15 @@ export default function Graph() {
     <div className="min-h-screen bg-gray-50 p-6">
       <div className="max-w-7xl mx-auto space-y-6">
         {/* Header */}
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-2xl font-semibold text-gray-900">
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 sm:p-6">
+          <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
+            <div className="min-w-0 flex-1">
+              <h1 className="text-xl sm:text-2xl font-semibold text-gray-900">
                 Real-time Data Monitoring
               </h1>
               <p className="text-gray-600 text-sm">Live emission data visualization - Individual parameter charts</p>
             </div>
-            <div className="flex items-center gap-4">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-4 w-full lg:w-auto">
               <div className="flex items-center gap-2">
                 <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`}></div>
                 <span className="text-sm text-gray-600">{isConnected ? 'Connected' : 'Disconnected'}</span>
@@ -878,31 +1074,33 @@ export default function Graph() {
                   })}
                 </div>
               )}
-              <button
-                onClick={() => setRunning((v) => !v)}
-                className={`px-4 py-2 font-medium rounded-lg transition-colors ${
-                  running 
-                    ? 'bg-red-600 hover:bg-red-700 text-white' 
-                    : 'bg-green-600 hover:bg-green-700 text-white'
-                }`}
-              >
-                {running ? "Pause" : "Resume"}
-              </button>
-              <button
-                onClick={fetchData}
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors"
-              >
-                Refresh
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setRunning((v) => !v)}
+                  className={`px-3 sm:px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
+                    running 
+                      ? 'bg-red-600 hover:bg-red-700 text-white' 
+                      : 'bg-green-600 hover:bg-green-700 text-white'
+                  }`}
+                >
+                  {running ? "Pause" : "Resume"}
+                </button>
+                <button
+                  onClick={fetchData}
+                  className="px-3 sm:px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
+                >
+                  Refresh
+                </button>
+              </div>
             </div>
           </div>
         </div>
 
         {/* Controls */}
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 sm:p-6 overflow-hidden">
           {/* Status Bar */}
-          <div className="flex items-center justify-between mb-4 p-3 bg-gray-50 rounded-lg">
-            <div className="flex items-center gap-4">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-4 p-3 bg-gray-50 rounded-lg gap-2 sm:gap-0">
+            <div className="flex flex-wrap items-center gap-4">
               <div className="flex items-center gap-2">
                 <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`}></div>
                 <span className="text-sm font-medium text-gray-700">
@@ -919,7 +1117,7 @@ export default function Graph() {
                 </div>
               )}
             </div>
-            <div className="text-sm text-gray-600">
+            <div className="text-sm text-gray-600 text-left sm:text-right">
               Total Data Points: {series.reduce((total, s) => total + s.data.length, 0)} | 
               Update Interval: {timeRange === "realtime" ? "5s" : "10s"} |
               Live Window: {liveWindowMs / 1000 / 60} min |
@@ -929,14 +1127,14 @@ export default function Graph() {
           </div>
           
           {/* Top Row - Stack and Time Range */}
-          <div className="flex flex-wrap items-center gap-6 mb-4">
+          <div className="flex flex-col sm:flex-row flex-wrap items-start sm:items-center gap-4 sm:gap-6 mb-4">
             {/* Stack Selector */}
-            <div className="flex items-center gap-2">
-              <label className="text-sm font-medium text-gray-700">Stack:</label>
+            <div className="flex items-center gap-2 min-w-0">
+              <label className="text-sm font-medium text-gray-700 whitespace-nowrap">Stack:</label>
               <select
                 value={selectedStack}
                 onChange={(e) => setSelectedStack(e.target.value)}
-                className="rounded-lg border border-gray-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200"
+                className="rounded-lg border border-gray-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 min-w-0"
               >
                 <option value="stack1">Stack 1</option>
                 <option value="stack2">Stack 2</option>
@@ -945,14 +1143,14 @@ export default function Graph() {
             </div>
 
             {/* Time Range Selector */}
-            <div className="flex items-center gap-2">
-              <label className="text-sm font-medium text-gray-700">Time Range:</label>
-              <div className="flex bg-gray-100 rounded-lg p-1">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 min-w-0 w-full sm:w-auto">
+              <label className="text-sm font-medium text-gray-700 whitespace-nowrap">Time Range:</label>
+              <div className="flex flex-wrap bg-gray-100 rounded-lg p-1 gap-1 w-full sm:w-auto">
                 {["realtime", "1h", "6h", "1d", "5d", "1m", "6m", "1y"].map((range) => (
                   <button
                     key={range}
                     onClick={() => setTimeRange(range)}
-                    className={`px-3 py-1 text-sm font-medium rounded-md transition-colors ${
+                    className={`px-2 sm:px-3 py-1 text-xs sm:text-sm font-medium rounded-md transition-colors whitespace-nowrap ${
                       timeRange === range
                         ? 'bg-white text-blue-600 shadow-sm'
                         : 'text-gray-600 hover:text-gray-900'
@@ -973,14 +1171,14 @@ export default function Graph() {
 
             {/* Live Window Selector (แสดงเฉพาะเมื่อเป็น Live) */}
             {timeRange === "realtime" && (
-              <div className="flex items-center gap-2">
-                <label className="text-sm font-medium text-gray-700">Live window:</label>
-                <div className="flex bg-gray-100 rounded-lg p-1">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 min-w-0 w-full sm:w-auto">
+                <label className="text-sm font-medium text-gray-700 whitespace-nowrap">Live window:</label>
+                <div className="flex flex-wrap bg-gray-100 rounded-lg p-1 gap-1 w-full sm:w-auto">
                   {[120_000, 300_000, 600_000, 1200_000].map(w => (
                     <button
                       key={w}
                       onClick={() => setLiveWindowMs(w)}
-                      className={`px-3 py-1 text-sm font-medium rounded-md transition-colors ${
+                      className={`px-2 sm:px-3 py-1 text-xs sm:text-sm font-medium rounded-md transition-colors whitespace-nowrap ${
                         liveWindowMs === w 
                           ? 'bg-white text-blue-600 shadow-sm' 
                           : 'text-gray-600 hover:text-gray-900'
@@ -997,25 +1195,10 @@ export default function Graph() {
             )}
             </div>
 
-          {/* Bottom Row - Legend */}
-          <div className="flex flex-wrap items-center gap-4">
-            <label className="text-sm font-medium text-gray-700">Parameters:</label>
-            <div className="flex flex-wrap items-center gap-3">
-            {series.map((s) => (
-              <div key={s.name} className="flex items-center gap-2">
-                <div 
-                  className="w-3 h-3 rounded-full flex-shrink-0" 
-                  style={{ backgroundColor: s.color }}
-                ></div>
-                <span className="text-sm text-gray-600 whitespace-nowrap">{s.name}</span>
-              </div>
-            ))}
-            </div>
-          </div>
         </div>
 
         {/* Individual Charts Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 sm:gap-6">
           {series.map((s) => {
             const latest = s.data.at(-1);
             const previous = s.data.at(-2);
@@ -1040,7 +1223,7 @@ export default function Graph() {
                   </div>
                   <div className="text-right">
                     <div className="text-2xl font-bold text-gray-900">
-                      {latest ? latest.y.toFixed(1) : '-'}
+                      {latest && latest.y !== undefined ? latest.y.toFixed(1) : '-'}
                     </div>
                     <div className={`text-sm font-medium ${
                       change >= 0 ? 'text-green-600' : 'text-red-600'
@@ -1149,7 +1332,9 @@ export default function Graph() {
                 <div className="flex items-center gap-4">
                   <div className="text-sm text-gray-600">
                     <span className="font-medium">ค่าล่าสุด:</span> 
-                    {modalSeries.data.length > 0 ? modalSeries.data[modalSeries.data.length - 1].y.toFixed(2) : "0.00"} {modalSeries.unit}
+                    {modalSeries.data.length > 0 && modalSeries.data[modalSeries.data.length - 1]?.y !== undefined 
+                      ? modalSeries.data[modalSeries.data.length - 1].y.toFixed(2) 
+                      : "0.00"} {modalSeries.unit}
                   </div>
                   <div className="text-sm text-gray-600">
                     <span className="font-medium">สถานะ:</span> 

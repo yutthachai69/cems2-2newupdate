@@ -74,11 +74,12 @@ export default function Home() {
     });
     const [selectedStack, setSelectedStack] = useState("stack1");
     const [isConnected, setIsConnected] = useState(false);
+    const [isConnecting, setIsConnecting] = useState(false);
     const [loading, setLoading] = useState(false);
     const websocketRef = useRef(null);
 
-    const API = import.meta.env.VITE_BACKEND_URL || "http://127.0.0.1:8000";
-    const WS_URL = "ws://127.0.0.1:8000";
+const API = import.meta.env.VITE_BACKEND_URL || "http://127.0.0.1:8000";
+const WS_URL = import.meta.env.VITE_WS_URL || "ws://127.0.0.1:8000";
 
     // HTTP fallback for testing
     const refreshData = async () => {
@@ -132,60 +133,128 @@ export default function Home() {
         }
     };
 
-    // HTTP polling for now (WebSocket has issues)
+    // WebSocket connection for real-time data - แก้ไขโครงสร้างให้ถูกต้อง
     useEffect(() => {
-        const fetchData = async () => {
-            try {
-                const response = await fetch(`${API}/api/data/realtime/${selectedStack}`);
-                const result = await response.json();
+        let ws = null;
+        let reconnectTimeout = null;
+        let isMounted = true;
+
+        const connect = () => {
+            // ป้องกัน multiple connections
+            if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
+                console.log("WebSocket already connecting or connected, skipping...");
+                return;
+            }
+
+            // ป้องกันการเชื่อมต่อเมื่อ component unmount
+            if (!isMounted) {
+                console.log("Component unmounted, skipping WebSocket connection");
+                return;
+            }
+
+            console.log("🔌 Connecting to WebSocket:", `${WS_URL}/ws/data`);
+            ws = new WebSocket(`${WS_URL}/ws/data`);
+            setIsConnecting(true);
+
+            ws.onopen = () => {
+                if (!isMounted) return;
+                console.log("✅ WebSocket connected successfully");
+                setIsConnecting(false);
+                setIsConnected(true);
                 
-                if (result.success && result.data && result.data[0]) {
-                    const stackData = result.data[0];
-                    const data = stackData.data;
-                    const correctedData = stackData.corrected_data;
+                // Send initial data request
+                try {
+                    ws.send(JSON.stringify({ type: "get_latest_data" }));
+                    console.log("📤 Sent initial data request");
+                } catch (error) {
+                    console.error("❌ Error sending initial data request:", error);
+                }
+            };
+
+            ws.onmessage = (event) => {
+                if (!isMounted) return;
+                try {
+                    const message = JSON.parse(event.data);
+                    console.log("📨 Received WebSocket data:", message.type);
                     
-                    console.log("DEBUG HTTP - Raw data:", data);
-                    console.log("DEBUG HTTP - Corrected data:", correctedData);
-                    
-                    const newValues = {
-                        SO2: data.SO2 || 0,
-                        NOx: data.NOx || 0,
-                        O2: data.O2 || 0,
-                        CO: data.CO || 0,
-                        Dust: data.Dust || 0,
-                        Temperature: data.Temperature || 0,
-                        Velocity: data.Velocity || 0,
-                        Pressure: data.Pressure || 0,
-                        SO2Corr: correctedData ? correctedData.SO2 : 0,
-                        NOxCorr: correctedData ? correctedData.NOx : 0,
-                        COCorr: correctedData ? correctedData.CO : 0,
-                        DustCorr: correctedData ? correctedData.Dust : 0,
-                        Flowrate: data.Flowrate || 0,
-                    };
-                    
-                    console.log("DEBUG HTTP - Setting new values:", newValues);
-                    setValues(newValues);
-                    
-                    // ตรวจสอบสถานะการเชื่อมต่อ
-                    const status = stackData.status || "unknown";
-                    if (status === "no devices configured") {
-                        setIsConnected(false);
-                    } else {
+                    if (message.type === "data" && message.data && message.data.length > 0) {
+                        const stackData = message.data[0];
+                        const data = stackData.data;
+                        const correctedData = stackData.corrected_data;
+                        
+                        const newValues = {
+                            SO2: data.SO2 || 0,
+                            NOx: data.NOx || 0,
+                            O2: data.O2 || 0,
+                            CO: data.CO || 0,
+                            Dust: data.Dust || 0,
+                            Temperature: data.Temperature || 0,
+                            Velocity: data.Velocity || 0,
+                            Pressure: data.Pressure || 0,
+                            SO2Corr: correctedData ? correctedData.SO2 : 0,
+                            NOxCorr: correctedData ? correctedData.NOx : 0,
+                            COCorr: correctedData ? correctedData.CO : 0,
+                            DustCorr: correctedData ? correctedData.Dust : 0,
+                            Flowrate: data.Flowrate || 0,
+                        };
+                        
+                        setValues(newValues);
                         setIsConnected(true);
                     }
-                } else {
-                    setIsConnected(false);
+                } catch (error) {
+                    console.error("Error parsing WebSocket message:", error);
                 }
-            } catch (error) {
-                console.error("Failed to fetch data:", error);
+            };
+
+            ws.onerror = (e) => {
+                if (!isMounted) return;
+                console.warn("⚠️ WebSocket error:", e);
+                if (ws) {
+                    console.log("WebSocket error details:", {
+                        readyState: ws.readyState,
+                        url: ws.url,
+                        error: e
+                    });
+                }
+                setIsConnecting(false);
                 setIsConnected(false);
-            }
+            };
+
+            ws.onclose = (e) => {
+                if (!isMounted) return;
+                console.warn("🔌 WebSocket closed", {
+                    code: e.code,
+                    reason: e.reason,
+                    wasClean: e.wasClean
+                });
+                ws = null;
+                setIsConnecting(false);
+                setIsConnected(false);
+                
+                // Only reconnect if not a clean close and component is still mounted
+                if (e.code !== 1000 && isMounted) {
+                    console.log("🔄 Scheduling reconnect in 3s...");
+                    reconnectTimeout = setTimeout(connect, 3000);
+                }
+            };
         };
 
-        fetchData();
-        const interval = setInterval(fetchData, 30000); // Update every 30 seconds (ลดความถี่)
-        
-        return () => clearInterval(interval);
+        connect();
+
+        return () => {
+            console.log("🧹 Cleaning up WebSocket connection");
+            isMounted = false;
+            
+            if (reconnectTimeout) {
+                clearTimeout(reconnectTimeout);
+                reconnectTimeout = null;
+            }
+            
+            if (ws) {
+                ws.close(1000, "Component unmounting");
+                ws = null;
+            }
+        };
     }, [selectedStack]);
 
     return (

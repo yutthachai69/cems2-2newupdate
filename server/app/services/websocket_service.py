@@ -41,13 +41,12 @@ class WebSocketService:
                 except:
                     self.disconnect(connection)
 
-    async def sen_message(self, message: StatusMessage):
+    async def send_status_message(self, message: StatusMessage):
         if self.status_connections:
             message_data = {
                 "type": "status",
-                "status": message.status,
-                "message": message.message,
-                "timestamp": message.timestamp
+                "data": message.dict(),
+                "timestamp": message.timestamp.isoformat()
             }
             for connection in self.status_connections:
                 try:

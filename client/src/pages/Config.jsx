@@ -1,5 +1,5 @@
 // src/pages/Config.jsx
-import React, { useEffect, useMemo, useState, useCallback } from "react";
+import React, { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { Link } from "react-router-dom";
 const API = import.meta.env.VITE_BACKEND_URL || "http://127.0.0.1:8000";
 
@@ -30,7 +30,7 @@ const ALARM_OPTIONS = [
 ];
 
 /* ---------- UI helpers ---------- */
-const DataTable = React.memo(function DataTable({ cols, rows, rowKey = "id", onDelete }) {
+const DataTable = function DataTable({ cols, rows, rowKey = "id", onDelete }) {
   return (
     <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
       <div className="overflow-x-auto">
@@ -57,7 +57,10 @@ const DataTable = React.memo(function DataTable({ cols, rows, rowKey = "id", onD
                   <div className="flex justify-center gap-1">
                     <button
                       className="px-2 py-1 bg-red-500 hover:bg-red-600 text-white text-xs font-medium rounded transition-colors"
-                      onClick={() => onDelete?.(r)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onDelete?.(r);
+                      }}
                     >Delete</button>
                   </div>
                 </td>
@@ -75,7 +78,7 @@ const DataTable = React.memo(function DataTable({ cols, rows, rowKey = "id", onD
       </div>
     </div>
   );
-});
+};
 
 const Section = ({ title, right, children, icon }) => (
   <div className="space-y-4">
@@ -141,13 +144,20 @@ export default function Config() {
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('devices');
   const [message, setMessage] = useState('');
-  const [selectedDevice, setSelectedDevice] = useState(null);
+  const [selectedDevice, setSelectedDevice] = useState(() => {
+    try {
+      const saved = localStorage.getItem('cems_selected_device');
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
   const [filteredMappings, setFilteredMappings] = useState([]);
   const [filteredStatusAlarmMappings, setFilteredStatusAlarmMappings] = useState([]);
   const [editingDevice, setEditingDevice] = useState(null);
   const [editForm, setEditForm] = useState({ name: '', host: '', port: 502, unit: 1 });
   const [deleteConfirm, setDeleteConfirm] = useState(null);
-
+  const gasIdInitialized = useRef(false);
 
   /* 1) Devices */
   const [devices, setDevices] = useState([
@@ -203,10 +213,23 @@ export default function Config() {
     }
   }, []);
 
+
+  /* Save selectedDevice to localStorage when it changes */
+  useEffect(() => {
+    if (selectedDevice) {
+      localStorage.setItem('cems_selected_device', JSON.stringify(selectedDevice));
+    } else {
+      localStorage.removeItem('cems_selected_device');
+    }
+  }, [selectedDevice]);
+
   /* เพิ่ม id ให้ Gas ที่ไม่มี id */
   useEffect(() => {
+    if (!gasIdInitialized.current && gases.length > 0) {
     setGases(g => g.map((x, i) => x.id ? x : ({ ...x, id: Date.now() + i })));
-  }, []);
+      gasIdInitialized.current = true;
+    }
+  }, [gases]);
 
   /* กรอง Mappings ตาม Device ที่เลือก */
   useEffect(() => {
@@ -263,7 +286,9 @@ export default function Config() {
 
   /* Handler functions สำหรับ DataTable */
 
-  const handleDelete = useCallback((row) => {
+  const handleDelete = (row) => {
+    console.log('handleDelete called:', { activeTab, row });
+    
     if (activeTab === 'devices') {
       // นับจำนวน mappings ที่เกี่ยวข้อง
       const relatedMappings = mapping.filter(m => m.device === row.name);
@@ -275,25 +300,30 @@ export default function Config() {
         message: `ต้องการลบ device "${row.name}" หรือไม่?${mappingCount > 0 ? `\n\n⚠️ จะลบ mappings ที่เกี่ยวข้องด้วย (${mappingCount} รายการ)` : ''}`
       });
     } else if (activeTab === 'mapping') {
+      // ใช้ field ที่ถูกต้องสำหรับ mapping
+      const mappingLabel = row.name || row.display || row.key || `${row.device || ''} → ${row.address || ''}`.trim();
+      
       setDeleteConfirm({
         type: 'mapping',
         item: row,
-        message: `ต้องการลบ mapping "${row.name}" หรือไม่?`
+        message: `ต้องการลบ mapping "${mappingLabel}" หรือไม่?`
       });
     } else if (activeTab === 'gas') {
+      const gasLabel = row.display || row.key || row.name || '';
       setDeleteConfirm({
         type: 'gas',
         item: row,
-        message: `ต้องการลบ gas setting "${row.display || row.key}" หรือไม่?`
+        message: `ต้องการลบ gas setting "${gasLabel}" หรือไม่?`
       });
     } else if (activeTab === 'status') {
+      const statusLabel = row.name || row.key || row.display || '';
       setDeleteConfirm({
         type: 'status_alarm',
         item: row,
-        message: `ต้องการลบ Status/Alarm mapping "${row.name}" หรือไม่?`
+        message: `ต้องการลบ Status/Alarm mapping "${statusLabel}" หรือไม่?`
       });
     }
-  }, [activeTab, mapping]);
+  };
 
   const handleEditDevice = (device) => {
     setEditingDevice(device);
@@ -333,8 +363,11 @@ export default function Config() {
     }
     
     // ถ้า device ที่แก้ไขเป็น selectedDevice ให้อัพเดทด้วย
-    if (selectedDevice?.id === editingDevice.id) {
-      setSelectedDevice({ ...selectedDevice, ...editForm });
+    if (selectedDevice?.name === editingDevice.name) {
+      const updatedSelectedDevice = { ...selectedDevice, ...editForm };
+      setSelectedDevice(updatedSelectedDevice);
+      // อัพเดท localStorage ด้วย
+      localStorage.setItem('cems_selected_device', JSON.stringify(updatedSelectedDevice));
     }
     
     setEditingDevice(null);
@@ -368,8 +401,9 @@ export default function Config() {
       setMapping(prev => prev.filter(m => m.device !== device.name));
       
       // ถ้า device ที่ถูกลบเป็น selectedDevice ให้ยกเลิกการเลือก
-      if (selectedDevice?.id === device.id) {
+      if (selectedDevice?.name === device.name) {
         setSelectedDevice(null);
+        localStorage.removeItem('cems_selected_device');
       }
       
       // บันทึกลงไฟล์ทันที
@@ -402,12 +436,12 @@ export default function Config() {
       }
       
     } else if (deleteConfirm?.type === 'mapping') {
-      const mapping = deleteConfirm.item;
-      setMapping(prev => prev.filter(m => m.id !== mapping.id));
+      const mappingToDelete = deleteConfirm.item;
+      setMapping(prev => prev.filter(m => m.id !== mappingToDelete.id));
       
       // บันทึกลงไฟล์ทันที
       try {
-        const updatedMappings = mapping.filter(m => m.id !== mapping.id);
+        const updatedMappings = mapping.filter(m => m.id !== mappingToDelete.id);
         const response = await fetch(`${API}/api/config/mappings`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -415,13 +449,13 @@ export default function Config() {
         });
         
         if (response.ok) {
-          setMessage(`ลบ mapping "${mapping.name}" และบันทึกแล้ว`);
+          setMessage(`ลบ mapping "${mappingToDelete.name}" และบันทึกแล้ว`);
         } else {
-          setMessage(`ลบ mapping "${mapping.name}" แล้ว แต่เกิดข้อผิดพลาดในการบันทึก`);
+          setMessage(`ลบ mapping "${mappingToDelete.name}" แล้ว แต่เกิดข้อผิดพลาดในการบันทึก`);
         }
       } catch (error) {
         console.error('Error saving after delete:', error);
-        setMessage(`ลบ mapping "${mapping.name}" แล้ว แต่เกิดข้อผิดพลาดในการบันทึก`);
+        setMessage(`ลบ mapping "${mappingToDelete.name}" แล้ว แต่เกิดข้อผิดพลาดในการบันทึก`);
       }
       
     } else if (deleteConfirm?.type === 'gas') {
@@ -683,42 +717,6 @@ export default function Config() {
   };
 
 
-  const exportConfig = () => {
-    const config = {
-      devices,
-      mapping,
-      gases,
-      systemParams,
-      statusAlarmMapping
-    };
-    const blob = new Blob([JSON.stringify(config, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "cems-config.json";
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  const importConfig = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      try {
-        const config = JSON.parse(e.target.result);
-        if (config.devices) setDevices(config.devices);
-        if (config.mapping) setMapping(config.mapping);
-        if (config.gases) setGases(config.gases);
-        if (config.systemParams) setSystemParams(prev => ({ ...prev, ...config.systemParams }));
-        if (config.statusAlarmMapping) setStatusAlarmMapping(config.statusAlarmMapping);
-        alert("Configuration imported successfully!");
-      } catch (error) {
-        alert("Failed to import configuration: " + error.message);
-      }
-    };
-    reader.readAsText(file);
-  };
 
   /* Reusable Table - ลบ useMemo เพื่อป้องกัน cursor เด้ง */
   const Table = ({ cols, rows, rowKey = "id" }) => (
@@ -973,7 +971,7 @@ export default function Config() {
         device: selectedDevice.name 
       });
     }
-  }), [mapping, up, addRow, selectedDevice]);
+  }), [mapping, up, addRow, selectedDevice, devices]);
 
   /* Gas columns */
   const cGas = useMemo(() => ({
@@ -1020,21 +1018,6 @@ export default function Config() {
               )}
               
               <div className="flex items-center gap-2">
-                <button
-                  className="px-4 py-2 bg-white/20 hover:bg-white/30 text-white font-medium rounded-lg transition-colors"
-                  onClick={exportConfig}
-                >
-                  Export
-                </button>
-                <label className="px-4 py-2 bg-white/20 hover:bg-white/30 text-white font-medium rounded-lg transition-colors cursor-pointer">
-                  Import
-                  <input
-                    type="file"
-                    accept=".json"
-                    onChange={importConfig}
-                    className="hidden"
-                  />
-                </label>
           <button
                   className="px-4 py-2 bg-white/20 hover:bg-white/30 text-white font-medium rounded-lg transition-colors"
             onClick={reloadConfig}
@@ -1112,13 +1095,13 @@ export default function Config() {
               <div className="flex gap-2">
                 <button
                   className={`px-3 py-1 rounded text-sm ${
-                    selectedDevice?.id === device.id 
+                    selectedDevice?.name === device.name 
                       ? 'bg-blue-500 text-white' 
                       : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
                   }`}
                   onClick={() => setSelectedDevice(device)}
                 >
-                  {selectedDevice?.id === device.id ? 'Selected' : 'Select'}
+                  {selectedDevice?.name === device.name ? 'Selected' : 'Select'}
                 </button>
                 <button
                   className="px-3 py-1 bg-yellow-500 hover:bg-yellow-600 text-white text-sm rounded transition-colors"
@@ -1207,40 +1190,6 @@ export default function Config() {
           </div>
         )}
         
-        {/* Delete Confirmation Modal */}
-        {deleteConfirm && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-lg p-6 w-96 max-w-md mx-4">
-              <div className="flex items-center gap-3 mb-4">
-                <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center">
-                  <svg className="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
-                  </svg>
-                </div>
-                <h3 className="text-lg font-semibold text-gray-900">ยืนยันการลบ</h3>
-              </div>
-              
-              <p className="text-gray-600 mb-6 whitespace-pre-line">
-                {deleteConfirm.message}
-              </p>
-              
-              <div className="flex gap-3">
-                <button
-                  className="flex-1 px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg transition-colors font-medium"
-                  onClick={confirmDelete}
-                >
-                  ลบ
-                </button>
-                <button
-                  className="flex-1 px-4 py-2 bg-gray-300 hover:bg-gray-400 text-gray-700 rounded-lg transition-colors font-medium"
-                  onClick={cancelDelete}
-                >
-                  ยกเลิก
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
       </Section>
           )}
 
@@ -1698,6 +1647,41 @@ export default function Config() {
           )}
         </div>
       </div>
+
+      {/* Delete Confirmation Modal - ย้ายมาที่ root level */}
+      {deleteConfirm && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-96 max-w-md mx-4">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center">
+                <svg className="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                </svg>
+              </div>
+              <h3 className="text-lg font-semibold text-gray-900">ยืนยันการลบ</h3>
+            </div>
+            
+            <p className="text-gray-600 mb-6 whitespace-pre-line">
+              {deleteConfirm.message}
+            </p>
+            
+            <div className="flex gap-3">
+              <button
+                className="flex-1 px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg transition-colors font-medium"
+                onClick={confirmDelete}
+              >
+                ลบ
+              </button>
+              <button
+                className="flex-1 px-4 py-2 bg-gray-300 hover:bg-gray-400 text-gray-700 rounded-lg transition-colors font-medium"
+                onClick={cancelDelete}
+              >
+                ยกเลิก
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

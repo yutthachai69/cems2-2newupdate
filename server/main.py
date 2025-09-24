@@ -5,6 +5,13 @@ from typing import List, Optional
 from datetime import datetime
 import io
 import json
+import base64
+import pandas as pd
+from reportlab.lib.pagesizes import letter, A4
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib import colors
+from reportlab.lib.units import inch
 from app.core.config import settings
 from app.core.constants import DATA_PARAMETERS, DEFAULT_THRESHOLDS, STATUS_CATEGORIES
 from app.services.data_service import DataService
@@ -21,6 +28,7 @@ from app.services.logs_service import LogsService
 from app.services.health_service import HealthService
 from app.domain.logs_model import LogFilter, LogResponse
 from app.services.modbus_data_service import ModbusDataService
+from app.services.influxdb_service import InfluxDBService
 from app.routers import influxdb
 from app.routers import config_devices
 from app.routers import config_mappings
@@ -47,6 +55,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# WebSocket CORS is handled by the main CORS middleware
+
 # Initialize services
 websocket_service = WebSocketService()
 config_service = ConfigService()
@@ -57,7 +67,44 @@ logs_service = LogsService()
 health_service = HealthService()
 modbus_data_service = ModbusDataService(config_service)
 sqlite_service = SQLiteService()
+influxdb_service = InfluxDBService()
 status_alarm_service = StatusAlarmService(config_service)
+
+# Background task for periodic saving to InfluxDB every 1 minute
+import asyncio
+_bg_task = None
+
+async def _background_ingest_loop():
+    """Fetch latest data and persist to InfluxDB every 60 seconds."""
+    while True:
+        try:
+            # Determine stack id
+            stacks = config_service.get_stacks() or []
+            stack_id = stacks[0].id if stacks else "stack1"
+            # get_latest_data already handles saving to DB when enabled
+            data_service.get_latest_data(stack_id)
+        except Exception as e:
+            print(f"Background ingest error: {e}")
+        await asyncio.sleep(60)
+
+@app.on_event("startup")
+async def _start_background_task():
+    global _bg_task
+    if _bg_task is None:
+        _bg_task = asyncio.create_task(_background_ingest_loop())
+        print("✅ Background ingest started (every 60s)")
+
+@app.on_event("shutdown")
+async def _stop_background_task():
+    global _bg_task
+    if _bg_task:
+        _bg_task.cancel()
+        try:
+            await _bg_task
+        except asyncio.CancelledError:
+            pass
+        _bg_task = None
+        print("🛑 Background ingest stopped")
 
 # Include routers
 app.include_router(influxdb.router)
@@ -114,7 +161,7 @@ async def run_test():
 @app.get("/api/data/latest/{stack_id}")
 async def get_latest_data(stack_id: str):
     try:
-        # ดึงข้อมูลจาก DataService
+        # ดึงข้อมูลจาก DataService (ใช้ InfluxDB)
         data = data_service.get_latest_data(stack_id)
         if data:
             return DataResponse(success=True, data=[data])
@@ -274,68 +321,189 @@ async def update_thresholds(thresholds: List[ThresholdConfig]):
 # WebSocket Routes
 @app.websocket("/ws/data")
 async def data_websocket(websocket: WebSocket):
-    await websocket_service.connect(websocket, "data")
+    await websocket.accept()
+    print("WebSocket client connected to /ws/data")
     
-    # ส่งข้อมูลเริ่มต้น
-    try:
-        stack_data = data_service.get_latest_data("stack1")
-        if stack_data:  # ส่งเฉพาะเมื่อมีข้อมูล
-            message = DataMessage(
-                data=[stack_data],
-                timestamp=datetime.now()
-            )
-            await websocket_service.send_message(message)
-    except Exception as e:
-        print(f"Error sending initial data: {e}")
-    
-    # ส่งข้อมูลแบบ periodic ทุก 5 วินาที
-    import asyncio
-    async def send_periodic_data():
-        while True:
-            try:
-                stack_data = data_service.get_latest_data("stack1")
-                if stack_data:  # ส่งเฉพาะเมื่อมีข้อมูล
-                    message = DataMessage(
-                        data=[stack_data],
-                        timestamp=datetime.now()
-                    )
-                    await websocket_service.send_message(message)
-                await asyncio.sleep(10)  # ส่งทุก 10 วินาที
-            except Exception as e:
-                print(f"Error sending periodic data: {e}")
-                break
-    
-    # เริ่มส่งข้อมูลแบบ periodic
-    periodic_task = asyncio.create_task(send_periodic_data())
+    periodic_task = None
+    connection_active = True
     
     try:
-        while True:
-            data = await websocket.receive_text()
-            try:
-                request = json.loads(data)
-                if request.get("type") == "request_data":
-                    # ส่งข้อมูลเมื่อได้รับคำขอ
+        # ส่งข้อมูลเริ่มต้น
+        try:
+            stack_data = data_service.get_latest_data("stack1")
+            if stack_data:
+                message = {
+                    "type": "data",
+                    "data": [stack_data.dict()],
+                    "timestamp": datetime.now().isoformat()
+                }
+                # Convert datetime objects to ISO format strings
+                if 'data' in message and message['data']:
+                    for item in message['data']:
+                        if 'data' in item and 'timestamp' in item['data']:
+                            item['data']['timestamp'] = item['data']['timestamp'].isoformat()
+                        if 'corrected_data' in item and item['corrected_data'] and 'timestamp' in item['corrected_data']:
+                            item['corrected_data']['timestamp'] = item['corrected_data']['timestamp'].isoformat()
+                await websocket.send_text(json.dumps(message))
+                print("Initial data sent")
+        except Exception as e:
+            print(f"Error sending initial data: {e}")
+        
+        # ส่งข้อมูลแบบ periodic ทุก 2 วินาที
+        import asyncio
+        async def send_periodic_data():
+            while connection_active:
+                try:
                     stack_data = data_service.get_latest_data("stack1")
-                    if stack_data:  # ส่งเฉพาะเมื่อมีข้อมูล
-                        message = DataMessage(
-                            data=[stack_data],
-                            timestamp=datetime.now()
-                        )
-                        await websocket_service.send_message(message)
-            except json.JSONDecodeError:
-                pass
+                    if stack_data:
+                        message = {
+                            "type": "data",
+                            "data": [stack_data.dict()],
+                            "timestamp": datetime.now().isoformat()
+                        }
+                        # Convert datetime objects to ISO format strings
+                        if 'data' in message and message['data']:
+                            for item in message['data']:
+                                if 'data' in item and 'timestamp' in item['data']:
+                                    item['data']['timestamp'] = item['data']['timestamp'].isoformat()
+                                if 'corrected_data' in item and item['corrected_data'] and 'timestamp' in item['corrected_data']:
+                                    item['corrected_data']['timestamp'] = item['corrected_data']['timestamp'].isoformat()
+                        await websocket.send_text(json.dumps(message))
+                        print("Periodic data sent")
+                    await asyncio.sleep(2)  # ส่งทุก 2 วินาที
+                except Exception as e:
+                    print(f"Error sending periodic data: {e}")
+                    break
+        
+        # เริ่มส่งข้อมูลแบบ periodic
+        periodic_task = asyncio.create_task(send_periodic_data())
+        
+        while True:
+            try:
+                data = await websocket.receive_text()
+                message = json.loads(data)
+                print(f"Received from client: {message}")
+                
+                if message.get("type") == "get_latest_data":
+                    # ส่งข้อมูลล่าสุดทันที
+                    try:
+                        stack_data = data_service.get_latest_data("stack1")
+                        if stack_data:
+                            message = {
+                                "type": "data",
+                                "data": [stack_data.dict()],
+                                "timestamp": datetime.now().isoformat()
+                            }
+                            # Convert datetime objects to ISO format strings
+                            if 'data' in message and message['data']:
+                                for item in message['data']:
+                                    if 'data' in item and 'timestamp' in item['data']:
+                                        item['data']['timestamp'] = item['data']['timestamp'].isoformat()
+                                    if 'corrected_data' in item and item['corrected_data'] and 'timestamp' in item['corrected_data']:
+                                        item['corrected_data']['timestamp'] = item['corrected_data']['timestamp'].isoformat()
+                            await websocket.send_text(json.dumps(message))
+                            print("Latest data sent on request")
+                    except Exception as e:
+                        print(f"Error sending latest data: {e}")
+                        
+            except WebSocketDisconnect:
+                print("WebSocket client disconnected")
+                break
+            except Exception as e:
+                print(f"Error receiving message: {e}")
+                break
+                
     except WebSocketDisconnect:
-        periodic_task.cancel()
-        websocket_service.disconnect(websocket)
+        print("WebSocket client disconnected")
+    except Exception as e:
+        print(f"WebSocket error: {e}")
+    finally:
+        connection_active = False
+        if periodic_task:
+            periodic_task.cancel()
+            try:
+                await periodic_task
+            except asyncio.CancelledError:
+                pass
+        print("WebSocket connection closed")
 
 @app.websocket("/ws/status")
 async def status_websocket(websocket: WebSocket):
-    await websocket_service.connect(websocket, "status")
+    await websocket.accept()
+    print("WebSocket client connected to /ws/status")
+    
     try:
+        # ส่งข้อมูลสถานะเริ่มต้น
+        try:
+            status_data = status_service.get_status()
+            message = {
+                "type": "status",
+                "data": status_data,
+                "timestamp": datetime.now().isoformat()
+            }
+            # Convert any datetime objects to ISO format strings
+            if isinstance(status_data, dict):
+                def convert_datetime(obj):
+                    if isinstance(obj, dict):
+                        return {k: convert_datetime(v) for k, v in obj.items()}
+                    elif isinstance(obj, list):
+                        return [convert_datetime(item) for item in obj]
+                    elif hasattr(obj, 'isoformat'):
+                        return obj.isoformat()
+                    else:
+                        return obj
+                message["data"] = convert_datetime(status_data)
+            await websocket.send_text(json.dumps(message))
+            print("Initial status sent")
+        except Exception as e:
+            print(f"Error sending initial status: {e}")
+        
+        # ส่งข้อมูลสถานะแบบ periodic ทุก 5 วินาที
+        import asyncio
+        async def send_periodic_status():
+            while True:
+                try:
+                    status_data = status_service.get_status()
+                    message = {
+                        "type": "status",
+                        "data": status_data,
+                        "timestamp": datetime.now().isoformat()
+                    }
+                    # Convert any datetime objects to ISO format strings
+                    if isinstance(status_data, dict):
+                        def convert_datetime(obj):
+                            if isinstance(obj, dict):
+                                return {k: convert_datetime(v) for k, v in obj.items()}
+                            elif isinstance(obj, list):
+                                return [convert_datetime(item) for item in obj]
+                            elif hasattr(obj, 'isoformat'):
+                                return obj.isoformat()
+                            else:
+                                return obj
+                        message["data"] = convert_datetime(status_data)
+                    await websocket.send_text(json.dumps(message))
+                    print("Periodic status sent")
+                    await asyncio.sleep(5)  # ส่งทุก 5 วินาที
+                except Exception as e:
+                    print(f"Error sending periodic status: {e}")
+                    break
+        
+        # เริ่มส่งข้อมูลแบบ periodic
+        periodic_task = asyncio.create_task(send_periodic_status())
+        
         while True:
-            data = await websocket.receive_text()
-    except WebSocketDisconnect:
-        websocket_service.disconnect(websocket)
+            try:
+                data = await websocket.receive_text()
+                print(f"Status WebSocket received: {data}")
+                # Handle incoming messages if needed
+            except WebSocketDisconnect:
+                print("Status WebSocket client disconnected")
+                break
+    except Exception as e:
+        print(f"Status WebSocket error: {e}")
+    finally:
+        periodic_task.cancel()
+        print("Status WebSocket connection closed")
 
 # Status Routes
 @app.get("/api/status")
@@ -483,6 +651,48 @@ async def get_latest_sqlite_data(stack_id: str):
         return {"success": True, "data": data}
     return {"success": False, "message": "No data found"}
 
+@app.get("/api/data/range")
+async def get_data_range(
+    start_time: Optional[datetime] = None,
+    end_time: Optional[datetime] = None,
+    stack_id: Optional[str] = None,
+    limit: int = 1000
+):
+    """ดึงข้อมูลในช่วงเวลาที่กำหนด (ใช้ InfluxDB)"""
+    try:
+        data = data_service.get_data_range(start_time, end_time, stack_id, limit)
+        return {"success": True, "data": data, "count": len(data)}
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+@app.get("/api/data/search")
+async def search_data(
+    start_time: Optional[datetime] = None,
+    end_time: Optional[datetime] = None,
+    search_column: Optional[str] = None,
+    search_value: Optional[str] = None,
+    stack_id: Optional[str] = None,
+    limit: int = 1000
+):
+    """ค้นหาข้อมูล (ใช้ InfluxDB)"""
+    try:
+        data = data_service.search_data(start_time, end_time, search_column, search_value, stack_id, limit)
+        return {"success": True, "data": data, "count": len(data)}
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+@app.get("/api/influxdb/test-connection")
+async def test_influxdb_connection():
+    """ทดสอบการเชื่อมต่อ InfluxDB"""
+    try:
+        is_connected = data_service.test_influxdb_connection()
+        if is_connected:
+            return {"success": True, "message": "InfluxDB connection successful"}
+        else:
+            return {"success": False, "message": "InfluxDB connection failed"}
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
 @app.get("/api/sqlite/data/all")
 async def get_all_data(
     start_date: Optional[datetime] = None, 
@@ -629,11 +839,18 @@ async def download_data(
         if columns:
             selected_columns = columns.split(',')
         
-        # Get data from database
-        data = sqlite_service.get_data_range(
-            start_date=start_dt,
-            end_date=end_dt,
-            limit=10000  # Large limit for download
+        # Get data from InfluxDB (every 1 minute to reduce duplicates)
+        # Calculate hours based on date range
+        if start_dt and end_dt:
+            hours = int((end_dt - start_dt).total_seconds() / 3600)
+            hours = max(1, min(hours, 168))  # Between 1 hour and 1 week
+        else:
+            hours = 24  # Default 24 hours
+        
+        data = influxdb_service.get_aggregated_data(
+            stack_id="stack1",  # Default stack
+            hours=hours,
+            interval="1m"  # Every 1 minute
         )
         
         if not data:
@@ -673,34 +890,108 @@ async def download_data(
             }
         
         elif format == "excel":
-            # For Excel, we'll return CSV for now (can be enhanced later)
-            headers = list(data[0].keys())
-            csv_content = ",".join(headers) + "\n"
-            
-            for row in data:
-                csv_content += ",".join([str(row.get(h, "")) for h in headers]) + "\n"
-            
-            return {
-                "success": True,
-                "data": csv_content,
-                "filename": filename.replace('.excel', '.csv'),
-                "content_type": "text/csv"
-            }
+            # Generate Excel file using pandas
+            try:
+                df = pd.DataFrame(data)
+                
+                # Create Excel file in memory
+                excel_buffer = io.BytesIO()
+                with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
+                    df.to_excel(writer, sheet_name='CEMS Data', index=False)
+                
+                excel_buffer.seek(0)
+                excel_content = excel_buffer.getvalue()
+                excel_base64 = base64.b64encode(excel_content).decode('utf-8')
+                
+                return {
+                    "success": True,
+                    "data": excel_base64,
+                    "filename": filename,
+                    "content_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                }
+            except Exception as e:
+                return {"success": False, "message": f"Excel generation error: {str(e)}"}
         
         elif format == "pdf":
-            # For PDF, we'll return CSV for now (can be enhanced later)
-            headers = list(data[0].keys())
-            csv_content = ",".join(headers) + "\n"
-            
-            for row in data:
-                csv_content += ",".join([str(row.get(h, "")) for h in headers]) + "\n"
-            
-            return {
-                "success": True,
-                "data": csv_content,
-                "filename": filename.replace('.pdf', '.csv'),
-                "content_type": "text/csv"
-            }
+            # Generate PDF file using ReportLab
+            try:
+                pdf_buffer = io.BytesIO()
+                doc = SimpleDocTemplate(pdf_buffer, pagesize=A4)
+                story = []
+                
+                # Get styles
+                styles = getSampleStyleSheet()
+                title_style = ParagraphStyle(
+                    'CustomTitle',
+                    parent=styles['Heading1'],
+                    fontSize=16,
+                    spaceAfter=30,
+                    alignment=1  # Center alignment
+                )
+                
+                # Add title
+                title = Paragraph("CEMS Data Report", title_style)
+                story.append(title)
+                story.append(Spacer(1, 12))
+                
+                # Add timestamp info
+                timestamp_info = f"Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+                if from_date and to_date:
+                    timestamp_info += f"<br/>Date Range: {from_date} to {to_date}"
+                
+                info_style = ParagraphStyle(
+                    'Info',
+                    parent=styles['Normal'],
+                    fontSize=10,
+                    spaceAfter=20
+                )
+                story.append(Paragraph(timestamp_info, info_style))
+                
+                # Prepare table data
+                if data:
+                    headers = list(data[0].keys())
+                    table_data = [headers]  # Header row
+                    
+                    # Add data rows (limit to prevent huge PDFs)
+                    max_rows = 1000
+                    for i, row in enumerate(data[:max_rows]):
+                        table_data.append([str(row.get(h, "")) for h in headers])
+                    
+                    # Create table
+                    table = Table(table_data)
+                    table.setStyle(TableStyle([
+                        ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+                        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                        ('FONTSIZE', (0, 0), (-1, 0), 8),
+                        ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                        ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+                        ('FONTSIZE', (0, 1), (-1, -1), 7),
+                        ('GRID', (0, 0), (-1, -1), 1, colors.black)
+                    ]))
+                    
+                    story.append(table)
+                    
+                    if len(data) > max_rows:
+                        story.append(Spacer(1, 12))
+                        note = Paragraph(f"<i>Note: Showing first {max_rows} records out of {len(data)} total records.</i>", styles['Normal'])
+                        story.append(note)
+                
+                # Build PDF
+                doc.build(story)
+                pdf_buffer.seek(0)
+                pdf_content = pdf_buffer.getvalue()
+                pdf_base64 = base64.b64encode(pdf_content).decode('utf-8')
+                
+                return {
+                    "success": True,
+                    "data": pdf_base64,
+                    "filename": filename,
+                    "content_type": "application/pdf"
+                }
+            except Exception as e:
+                return {"success": False, "message": f"PDF generation error: {str(e)}"}
         
         else:
             return {"success": False, "message": "Unsupported format"}

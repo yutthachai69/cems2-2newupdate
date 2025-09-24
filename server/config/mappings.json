@@ -9,7 +9,6 @@
     "count": 2,
     "device": "test1"
   },
- 
   {
     "id": 2,
     "name": "NOx",
@@ -25,16 +24,6 @@
     "name": "O2",
     "unit": "%",
     "address": 4,
-    "dataType": "float32",
-    "format": "AB CD",
-    "count": 2,
-    "device": "test1"
-  },
-  {
-    "id": 4,
-    "name": "CO",
-    "unit": "ppm",
-    "address": 6,
     "dataType": "float32",
     "format": "AB CD",
     "count": 2,

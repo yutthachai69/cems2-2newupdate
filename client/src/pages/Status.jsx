@@ -76,7 +76,7 @@ function Pill({ label, on, type = "status", category = "default", error = null }
 import { useState, useEffect, useRef } from "react";
 
 const API = import.meta.env.VITE_BACKEND_URL || "http://127.0.0.1:8000";
-const WS_URL = "ws://127.0.0.1:8000";
+const WS_URL = import.meta.env.VITE_WS_URL || "ws://127.0.0.1:8000";
 
 export default function Status() {
     const [statusData, setStatusData] = useState({
@@ -138,26 +138,66 @@ export default function Status() {
       }
     };
 
-    // Auto-refresh + Manual refresh
+    // WebSocket connection for real-time status data - ใช้วิธีง่ายๆ
     useEffect(() => {
-      // Initial fetch
-      console.log("Status: Initial fetch");
-      fetchStatusData();
-      
-      // Auto-refresh every 2 seconds
-      console.log("Status: Setting up auto-refresh interval");
-      const interval = setInterval(() => {
-        console.log("Status: Auto-refresh triggered");
-        // ไม่แสดง loading state สำหรับ auto-refresh
-        fetchStatusData().catch(error => {
-          console.log("Auto-refresh error:", error);
-        });
-      }, 2000);
-      
-      return () => {
-        console.log("Status: Cleaning up interval");
-        clearInterval(interval);
-      };
+        let ws = null;
+        let reconnectTimeout = null;
+
+        const connect = () => {
+            if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
+                return;
+            }
+
+            ws = new WebSocket(`${WS_URL}/ws/status`);
+
+            ws.onopen = () => {
+                console.log("Status WebSocket connected");
+                setIsConnected(true);
+            };
+
+            ws.onmessage = (event) => {
+                try {
+                    const message = JSON.parse(event.data);
+                    console.log("Status WebSocket data received:", message);
+                    
+                    if (message.type === "status") {
+                        setStatusData(message.data);
+                        setLastUpdate(new Date());
+                        setIsConnected(true);
+                    }
+                } catch (error) {
+                    console.error("Error parsing status WebSocket message:", error);
+                }
+            };
+
+            ws.onerror = (e) => {
+                console.warn("Status WebSocket error:", e);
+                setIsConnected(false);
+            };
+
+            ws.onclose = () => {
+                console.warn("Status WebSocket closed, reconnect in 2s");
+                ws = null;
+                setIsConnected(false);
+                reconnectTimeout = setTimeout(connect, 2000);
+            };
+        };
+
+        // Initial fetch with HTTP
+        fetchStatusData();
+        
+        // Then connect WebSocket
+        connect();
+
+        return () => {
+            if (ws) {
+                ws.close();
+                ws = null;
+            }
+            if (reconnectTimeout) {
+                clearTimeout(reconnectTimeout);
+            }
+        };
     }, []);
 
     // ฟังก์ชัน acknowledge alarm

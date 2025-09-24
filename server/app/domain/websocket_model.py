@@ -5,7 +5,7 @@ from datetime import datetime
 class WebSocketMessage(BaseModel):
     type: str
     data: Dict[str, Any]
-    timestemp: datetime
+    timestamp: datetime
 
 class DataMessage(BaseModel):
     type: str = "data"

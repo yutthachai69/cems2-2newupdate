@@ -121,6 +121,70 @@ class SQLiteService:
         finally:
             self.close_db(db)
 
+    def get_data_range_minute_interval(self, start_date: Optional[datetime] = None, end_date: Optional[datetime] = None,
+                                      stack_id: Optional[str] = None, limit: int = 1000) -> List[Dict]:
+        """ดึงข้อมูลทุก 1 นาที เพื่อลดข้อมูลซ้ำกัน"""
+        db = self.get_db()
+        try:
+            # สร้าง subquery เพื่อเลือกข้อมูลทุก 1 นาที
+            # ใช้ strftime เพื่อปัดเศษเวลาให้เป็นนาที
+            subquery = db.query(
+                CEMSData.stack_id,
+                db.func.strftime('%Y-%m-%d %H:%M:00', CEMSData.timestamp).label('minute_timestamp'),
+                db.func.max(CEMSData.timestamp).label('latest_timestamp')
+            ).group_by(
+                CEMSData.stack_id,
+                db.func.strftime('%Y-%m-%d %H:%M:00', CEMSData.timestamp)
+            )
+            
+            # เพิ่มเงื่อนไขกรองตามวันที่ถ้ามี
+            if start_date:
+                subquery = subquery.filter(CEMSData.timestamp >= start_date)
+            if end_date:
+                subquery = subquery.filter(CEMSData.timestamp <= end_date)
+            if stack_id:
+                subquery = subquery.filter(CEMSData.stack_id == stack_id)
+            
+            # ดึงข้อมูลจาก subquery
+            minute_data = subquery.order_by(db.func.max(CEMSData.timestamp).desc()).limit(limit).all()
+            
+            # ดึงข้อมูลเต็มจาก CEMSData ตาม timestamp ที่ได้
+            result = []
+            for minute_row in minute_data:
+                full_data = db.query(CEMSData).filter(
+                    CEMSData.stack_id == minute_row.stack_id,
+                    CEMSData.timestamp == minute_row.latest_timestamp
+                ).first()
+                
+                if full_data:
+                    result.append({
+                        "timestamp": full_data.timestamp,
+                        "stack_id": full_data.stack_id,
+                        "stack_name": full_data.stack_name,
+                        "SO2": full_data.SO2,
+                        "NOx": full_data.NOx,
+                        "O2": full_data.O2,
+                        "CO": full_data.CO,
+                        "Dust": full_data.Dust,
+                        "Temperature": full_data.Temperature,
+                        "Velocity": full_data.Velocity,
+                        "Flowrate": full_data.Flowrate,
+                        "Pressure": full_data.Pressure,
+                        "SO2Corr": full_data.SO2Corr,
+                        "NOxCorr": full_data.NOxCorr,
+                        "COCorr": full_data.COCorr,
+                        "DustCorr": full_data.DustCorr,
+                        "status": full_data.status,
+                        "device_name": full_data.device_name
+                    })
+            
+            return result
+        except SQLAlchemyError as e:
+            logger.error(f"Error getting minute interval data: {e}")
+            return []
+        finally:
+            self.close_db(db)
+
     def search_data(self, start_date: Optional[datetime] = None, end_date: Optional[datetime] = None,
                    search_column: Optional[str] = None, search_value: Optional[str] = None,
                    stack_id: Optional[str] = None, limit: int = 1000) -> List[Dict]:

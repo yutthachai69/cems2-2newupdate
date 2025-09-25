@@ -131,11 +131,11 @@ class StatusService:
                 acknowledged=True  # Default เป็น inactive รอการแมพ
             ))
         
-        # ลองอ่านข้อมูลจาก SQLite เพื่อแสดงค่าจริงถ้ามี
+        # ลองอ่านข้อมูลจาก InfluxDB เพื่อแสดงค่าจริงถ้ามี
         try:
-            from app.services.sqlite_service import SQLiteService
-            sqlite_service = SQLiteService()
-            latest_data = sqlite_service.get_latest_data()
+            from app.services.influxdb_service import InfluxDBService
+            influxdb_service = InfluxDBService()
+            latest_data = influxdb_service.get_latest_cems_data("stack1")
             
             if latest_data:
                 # ตรวจสอบค่าที่ผิดปกติและสร้าง alarms จริง
@@ -171,9 +171,9 @@ class StatusService:
                 )
                 
         except Exception as e:
-            print(f"Error reading SQLite data: {e}")
+            print(f"Error reading InfluxDB data: {e}")
         
-        # ถ้าไม่มีข้อมูล SQLite ให้แสดงการ์ดทั้งหมดเป็น OFF
+        # ถ้าไม่มีข้อมูล InfluxDB ให้แสดงการ์ดทั้งหมดเป็น OFF
         return StatusResponse(
             system_status="offline",
             active_alarms=0,

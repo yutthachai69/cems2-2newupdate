@@ -59,8 +59,8 @@ class StatusAlarmService:
                     # บังคับให้ reconnect Modbus ทุกครั้ง
                     self.modbus_service.disconnect_device(device_name)
                     
-                    # อ่านค่า digital (0 หรือ 1)
-                    value = self.modbus_service.read_digital_input(device_name, address)
+                    # อ่านค่า coil status (0 หรือ 1)
+                    value = self.modbus_service.read_coil_status(device_name, address)
                     print(f"DEBUG: Read {mapping['name']} from {device_name} address {address} = {value}")
                     
                     results.append({

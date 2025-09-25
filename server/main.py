@@ -6,7 +6,6 @@ from datetime import datetime
 import io
 import json
 import base64
-import pandas as pd
 from reportlab.lib.pagesizes import letter, A4
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
@@ -35,7 +34,6 @@ from app.routers import config_mappings
 from app.routers import config_gas
 from app.routers import config_system
 from app.routers import config_thresholds
-from app.services.sqlite_service import SQLiteService
 from app.routers import config_status_alarm
 from app.services.status_alarm_sevice import StatusAlarmService
 
@@ -66,7 +64,6 @@ blowback_service = BlowbackService()
 logs_service = LogsService()
 health_service = HealthService()
 modbus_data_service = ModbusDataService(config_service)
-sqlite_service = SQLiteService()
 influxdb_service = InfluxDBService()
 status_alarm_service = StatusAlarmService(config_service)
 
@@ -210,7 +207,7 @@ async def get_realtime_data(stack_id: str):
             )
             
             # บันทึกลง DB (แต่ไม่ส่งกลับ)
-            data_service.save_data_to_sqlite(stack_data)
+            data_service.save_data_to_influxdb(stack_data)
             
             return DataResponse(success=True, data=[stack_data])
         else:
@@ -356,6 +353,7 @@ async def data_websocket(websocket: WebSocket):
                 try:
                     stack_data = data_service.get_latest_data("stack1")
                     if stack_data:
+                        print(f"DEBUG: WebSocket sending stack_data: {stack_data}")
                         message = {
                             "type": "data",
                             "data": [stack_data.dict()],
@@ -643,13 +641,6 @@ async def test_modbus_connection_endpoint(device: dict):
     except Exception as e:
         return {"success": False, "message": f"Connection test failed: {str(e)}"}
 
-# SQLite Routes
-@app.get("/api/sqlite/data/latest/{stack_id}")
-async def get_latest_sqlite_data(stack_id: str):
-    data = sqlite_service.get_latest_data(stack_id)
-    if data:
-        return {"success": True, "data": data}
-    return {"success": False, "message": "No data found"}
 
 @app.get("/api/data/range")
 async def get_data_range(
@@ -693,108 +684,10 @@ async def test_influxdb_connection():
     except Exception as e:
         return {"success": False, "message": str(e)}
 
-@app.get("/api/sqlite/data/all")
-async def get_all_data(
-    start_date: Optional[datetime] = None, 
-    end_date: Optional[datetime] = None, 
-    stack_id: Optional[str] = None
-    ):
-    """ดึงข้อมูลทั้งหมดโดยไม่มี limit"""
-    data = sqlite_service.get_data_range(start_date, end_date, stack_id, limit=None)
-    return {"success": True, "data": data, "count": len(data)}
 
-@app.get("/api/sqlite/data/range")
-async def get_data_range(
-    start_date: Optional[datetime] = None, 
-    end_date: Optional[datetime] = None, 
-    stack_id: Optional[str] = None, 
-    limit: int = 50000  # เพิ่ม limit เป็น 50000
-    ):
-    data = sqlite_service.get_data_range(start_date, end_date, stack_id, limit)
-    return {"success": True, "data": data, "count": len(data)}
 
-@app.get("/api/sqlite/data/search")
-async def search_sqlite_data(
-    from_date: Optional[str] = None,
-    to_date: Optional[str] = None,
-    search_column: Optional[str] = None,
-    search_value: Optional[str] = None,
-    limit: int = 50000  # เพิ่ม limit เป็น 50000
-):
-    """Search CEMS data from SQLite with filters"""
-    try:
-        # Parse dates if provided
-        start_dt = None
-        end_dt = None
-        
-        if from_date:
-            start_dt = datetime.fromisoformat(from_date.replace('Z', '+00:00'))
-        if to_date:
-            end_dt = datetime.fromisoformat(to_date.replace('Z', '+00:00'))
-        
-        # Get data from SQLite with search filters
-        data = sqlite_service.search_data(
-            start_date=start_dt,
-            end_date=end_dt,
-            search_column=search_column,
-            search_value=search_value,
-            limit=limit
-        )
-        
-        return {
-            "success": True,
-            "data": data,
-            "count": len(data)
-        }
-    except Exception as e:
-        return {
-            "success": False,
-            "message": str(e),
-            "data": [],
-            "count": 0
-        }
 
-@app.get("/api/sqlite/logs")
-async def get_sqlite_logs(
-    start_date: Optional[datetime] = None,
-    end_date: Optional[datetime] = None,
-    level: Optional[str] = None,
-    limit: int = 1000
-):
-    logs = sqlite_service.get_system_logs(start_date, end_date, level, limit)
-    return {"success": True, "logs": logs, "count": len(logs)}
 
-@app.post("/api/sqlite/migrate")
-async def migrate_config_to_sqlite():
-
-    try:
-        devices = config_service.get_devices()
-        for device in devices:
-            device_data = {
-                "name": device.name,
-                "host": device.host,
-                "port": device.port,
-                "unit": device.unit,
-                "mode": getattr(device, "mode", "modbus"),
-                "enabled": getattr(device, "enabled", True)
-            }
-            sqlite_service.save_device_config(device_data)
-        mappings = config_service.get_mappings()
-        for mapping in mappings:
-            mapping_data = {
-                "name": mapping.name,
-                "unit": mapping.unit,
-                "address": mapping.address,
-                "data_type": mapping.dataType,
-                "format": mapping.format,
-                "count": mapping.count,
-                "device_name": mapping.device,
-                "enabled": True
-            }
-            sqlite_service.save_mapping_config(mapping_data)
-        return {"success": True, "message": "Configuration migrated successfully"}
-    except Exception as e:
-        return {"success": False, "message": f"Failed to migrate config: {str(e)}"}
 
 # Status Alarm Routes
 @app.get("/api/status-alarm/data")
@@ -817,7 +710,7 @@ async def get_status_alarm_data():
         }
 
 # Download endpoint
-@app.get("/api/sqlite/data/download")
+@app.get("/api/data/download")
 async def download_data(
     from_date: Optional[str] = None,
     to_date: Optional[str] = None,
@@ -867,6 +760,17 @@ async def download_data(
                 filtered_data.append(filtered_item)
             data = filtered_data
         
+        # ลบคอลัมน์ที่ไม่จำเป็น
+        if data:
+            filtered_data = []
+            for item in data:
+                filtered_item = {}
+                for key, value in item.items():
+                    if key not in ["status", "device_name", "stack_name"]:
+                        filtered_item[key] = value
+                filtered_data.append(filtered_item)
+            data = filtered_data
+        
         # Generate filename
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"cems_data_{timestamp}.{format}"
@@ -880,6 +784,19 @@ async def download_data(
             csv_content = ",".join(headers) + "\n"
             
             for row in data:
+                # แก้ไข timezone สำหรับ timestamp
+                if 'timestamp' in row:
+                    # แปลงเป็น Thailand timezone (UTC+7)
+                    from datetime import timezone, timedelta
+                    thailand_tz = timezone(timedelta(hours=7))
+                    if isinstance(row['timestamp'], str):
+                        dt = datetime.fromisoformat(row['timestamp'].replace('Z', '+00:00'))
+                    else:
+                        dt = row['timestamp']
+                    # แปลงเป็น Thailand time
+                    thailand_time = dt.astimezone(thailand_tz)
+                    row['timestamp'] = thailand_time.strftime('%Y-%m-%d %H:%M:%S')
+                
                 csv_content += ",".join([str(row.get(h, "")) for h in headers]) + "\n"
             
             return {
@@ -889,34 +806,13 @@ async def download_data(
                 "content_type": "text/csv"
             }
         
-        elif format == "excel":
-            # Generate Excel file using pandas
-            try:
-                df = pd.DataFrame(data)
-                
-                # Create Excel file in memory
-                excel_buffer = io.BytesIO()
-                with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
-                    df.to_excel(writer, sheet_name='CEMS Data', index=False)
-                
-                excel_buffer.seek(0)
-                excel_content = excel_buffer.getvalue()
-                excel_base64 = base64.b64encode(excel_content).decode('utf-8')
-                
-                return {
-                    "success": True,
-                    "data": excel_base64,
-                    "filename": filename,
-                    "content_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                }
-            except Exception as e:
-                return {"success": False, "message": f"Excel generation error: {str(e)}"}
-        
         elif format == "pdf":
             # Generate PDF file using ReportLab
             try:
                 pdf_buffer = io.BytesIO()
-                doc = SimpleDocTemplate(pdf_buffer, pagesize=A4)
+                doc = SimpleDocTemplate(pdf_buffer, pagesize=A4, 
+                                      leftMargin=0.3*inch, rightMargin=0.3*inch,
+                                      topMargin=0.3*inch, bottomMargin=0.3*inch)
                 story = []
                 
                 # Get styles
@@ -953,8 +849,19 @@ async def download_data(
                     table_data = [headers]  # Header row
                     
                     # Add data rows (limit to prevent huge PDFs)
-                    max_rows = 1000
+                    max_rows = 100  # ลดจำนวนแถวเพื่อให้แสดงครบ
                     for i, row in enumerate(data[:max_rows]):
+                        # แก้ไข timezone สำหรับ timestamp
+                        if 'timestamp' in row:
+                            from datetime import timezone, timedelta
+                            thailand_tz = timezone(timedelta(hours=7))
+                            if isinstance(row['timestamp'], str):
+                                dt = datetime.fromisoformat(row['timestamp'].replace('Z', '+00:00'))
+                            else:
+                                dt = row['timestamp']
+                            thailand_time = dt.astimezone(thailand_tz)
+                            row['timestamp'] = thailand_time.strftime('%Y-%m-%d %H:%M:%S')
+                        
                         table_data.append([str(row.get(h, "")) for h in headers])
                     
                     # Create table
@@ -964,12 +871,19 @@ async def download_data(
                         ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
                         ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
                         ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-                        ('FONTSIZE', (0, 0), (-1, 0), 8),
-                        ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                        ('FONTSIZE', (0, 0), (-1, 0), 5),  # ลดขนาดฟอนต์อีก
+                        ('BOTTOMPADDING', (0, 0), (-1, 0), 6),
                         ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
-                        ('FONTSIZE', (0, 1), (-1, -1), 7),
-                        ('GRID', (0, 0), (-1, -1), 1, colors.black)
+                        ('FONTSIZE', (0, 1), (-1, -1), 4),  # ลดขนาดฟอนต์อีก
+                        ('GRID', (0, 0), (-1, -1), 0.5, colors.black),
+                        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.lightgrey])
                     ]))
+                    
+                    # ปรับขนาดคอลัมน์ให้พอดีกับหน้า
+                    table_width = A4[0] - 0.6*inch  # ลด margin ให้เหลือ 0.6 inch
+                    col_widths = [table_width / len(headers)] * len(headers)
+                    table._argW = col_widths
                     
                     story.append(table)
                     

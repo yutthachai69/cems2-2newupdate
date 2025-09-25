@@ -244,8 +244,26 @@ class InfluxDBService:
 
             if current_data:
                 data_points.append(current_data)
-
-            return data_points
+            
+            # รวมข้อมูลที่มี timestamp เดียวกันเป็น record เดียว
+            merged_data = {}
+            for point in data_points:
+                timestamp_key = point["timestamp"].isoformat()
+                if timestamp_key not in merged_data:
+                    merged_data[timestamp_key] = {
+                        "timestamp": point["timestamp"],
+                        "stack_id": point["stack_id"]
+                    }
+                # รวม field ทั้งหมด
+                for key, value in point.items():
+                    if key not in ["timestamp", "stack_id"]:
+                        merged_data[timestamp_key][key] = value
+            
+            # แปลงกลับเป็น list และเรียงตามเวลา
+            final_data = list(merged_data.values())
+            final_data.sort(key=lambda x: x["timestamp"], reverse=True)
+            
+            return final_data
         except Exception as e:
             print(f"Error getting CEMS data range: {e}")
             return []

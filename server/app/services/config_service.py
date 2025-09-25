@@ -1,6 +1,5 @@
 from typing import List, Dict, Optional
 from app.domain.config_model import *
-from app.services.sqlite_service import SQLiteService
 
 class ConfigService:
     def __init__(self):
@@ -10,7 +9,6 @@ class ConfigService:
         self.system_params = SystemConfig()
         self.stacks = []
         self.thresholds = []
-        self.sqlite_service = SQLiteService()
         
         # โหลดข้อมูลเริ่มต้นจากไฟล์ config
         self._load_default_configs()
@@ -71,20 +69,6 @@ class ConfigService:
         self._load_default_configs()
 
     def add_mappings(self, mappings: List[MappingConfig]) -> bool:
-        # บันทึกลง SQLite
-        for mapping in mappings:
-            mapping_data = {
-                "name": mapping.name,
-                "unit": mapping.unit,
-                "address": mapping.address,
-                "data_type": mapping.dataType,
-                "format": mapping.format,
-                "count": mapping.count,
-                "device_name": mapping.device,
-                "enabled": True
-            }
-            self.sqlite_service.save_mapping_config(mapping_data)
-        
         # บันทึกลง memory
         self.mappings.clear()
         for mapping in mappings:

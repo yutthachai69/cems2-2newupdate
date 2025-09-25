@@ -6,7 +6,6 @@ from app.services.modbus_data_service import ModbusDataService
 from app.services.config_service import ConfigService
 from app.services.websocket_service import WebSocketService
 from app.domain.websocket_model import DataMessage
-from app.services.sqlite_service import SQLiteService
 from app.services.influxdb_service import InfluxDBService
 
 class DataService:
@@ -18,7 +17,6 @@ class DataService:
         self.config_service = config_service or ConfigService()
         self.websocket_service = websocket_service
         self.use_modbus = True  # เปิด Modbus เพื่อรับข้อมูล real-time
-        self.sqlite_service = SQLiteService()
         self.influxdb_service = InfluxDBService()
         self.use_influxdb = True  # ใช้ InfluxDB เป็นหลัก
 
@@ -29,13 +27,13 @@ class DataService:
                 # ดึงข้อมูลจาก Modbus ตามการตั้งค่าใน Config
                 modbus_data = self.modbus_data_service.get_data_from_devices()
                 if modbus_data:
+                    print(f"DEBUG: DataService received modbus_data: {modbus_data}")
                     # แปลงข้อมูล Modbus เป็น StackData
                     stack_data = self._convert_modbus_to_stack_data(modbus_data, stack_id)
+                    print(f"DEBUG: DataService created stack_data: {stack_data}")
                     # บันทึกลง InfluxDB
                     if self.use_influxdb:
                         self.save_data_to_influxdb(stack_data)
-                    else:
-                        self.save_data_to_sqlite(stack_data)
                     return stack_data
                 else:
                     print("DEBUG: No Modbus data available, trying InfluxDB fallback")
@@ -43,41 +41,22 @@ class DataService:
                 print(f"Modbus error: {e}")
         
         # 2. ถ้าไม่มีข้อมูลจาก Modbus ให้ดึงจาก InfluxDB
-        if self.use_influxdb:
-            influxdb_data = self.influxdb_service.get_latest_cems_data(stack_id)
-            if influxdb_data:
-                data_point = DataPoint(**influxdb_data["data"])
-                corrected_data = DataPoint(**influxdb_data["corrected_data"])
-                
-                # กรองข้อมูลให้แสดงเฉพาะที่มี mapping
-                filtered_data = self._filter_data_by_mappings(data_point)
-                filtered_corrected = self._filter_data_by_mappings(corrected_data)
-                
-                return StackData(
-                    stack_id=influxdb_data["stack_id"],
-                    stack_name=influxdb_data["stack_name"],
-                    data=filtered_data,
-                    corrected_data=filtered_corrected,
-                    status=influxdb_data["status"]
-                )
-        else:
-            # Fallback ไป SQLite ถ้าไม่ใช้ InfluxDB
-            sqlite_data = self.sqlite_service.get_latest_data(stack_id)
-            if sqlite_data:
-                data_point = DataPoint(**sqlite_data["data"])
-                corrected_data = DataPoint(**sqlite_data["corrected_data"])
-                
-                # กรองข้อมูลให้แสดงเฉพาะที่มี mapping
-                filtered_data = self._filter_data_by_mappings(data_point)
-                filtered_corrected = self._filter_data_by_mappings(corrected_data)
-                
-                return StackData(
-                    stack_id=sqlite_data["stack_id"],
-                    stack_name=sqlite_data["stack_name"],
-                    data=filtered_data,
-                    corrected_data=filtered_corrected,
-                    status=sqlite_data["status"]
-                )
+        influxdb_data = self.influxdb_service.get_latest_cems_data(stack_id)
+        if influxdb_data:
+            data_point = DataPoint(**influxdb_data["data"])
+            corrected_data = DataPoint(**influxdb_data["corrected_data"])
+            
+            # กรองข้อมูลให้แสดงเฉพาะที่มี mapping
+            filtered_data = self._filter_data_by_mappings(data_point)
+            filtered_corrected = self._filter_data_by_mappings(corrected_data)
+            
+            return StackData(
+                stack_id=influxdb_data["stack_id"],
+                stack_name=influxdb_data["stack_name"],
+                data=filtered_data,
+                corrected_data=filtered_corrected,
+                status=influxdb_data["status"]
+            )
         
         # 3. ไม่มีข้อมูลเลย - สร้างข้อมูลเริ่มต้น
         print("DEBUG: No data available, creating default data")
@@ -88,6 +67,14 @@ class DataService:
             timestamp=current_time,
             SO2=0.0, NOx=0.0, O2=0.0, CO=0.0, Dust=0.0,
             Temperature=0.0, Velocity=0.0, Flowrate=0.0, Pressure=0.0
+        )
+        
+        return StackData(
+            stack_id=stack_id,
+            stack_name=self.stacks[stack_id]["name"],
+            data=default_data,
+            corrected_data=default_data,
+            status="no data available"
         )
         
     def _filter_data_by_mappings(self, data_point: DataPoint) -> DataPoint:
@@ -188,32 +175,6 @@ class DataService:
         except Exception as e:
             print(f"DEBUG: Error saving data to InfluxDB: {str(e)}")
 
-    def save_data_to_sqlite(self, stack_data: StackData):
-        """บันทึกข้อมูลลง SQLite (fallback)"""
-        try:
-            data_dict = {
-                "stack_id": stack_data.stack_id,
-                "stack_name": stack_data.stack_name,
-                "SO2": stack_data.data.SO2,
-                "NOx": stack_data.data.NOx,
-                "O2": stack_data.data.O2,
-                "CO": stack_data.data.CO,
-                "Dust": stack_data.data.Dust,
-                "Temperature": stack_data.data.Temperature,
-                "Velocity": stack_data.data.Velocity,
-                "Flowrate": stack_data.data.Flowrate,
-                "Pressure": stack_data.data.Pressure,
-                "SO2Corr": stack_data.corrected_data.SO2 if stack_data.corrected_data else 0,
-                "NOxCorr": stack_data.corrected_data.NOx if stack_data.corrected_data else 0,
-                "COCorr": stack_data.corrected_data.CO if stack_data.corrected_data else 0,
-                "DustCorr": stack_data.corrected_data.Dust if stack_data.corrected_data else 0,
-                "status": stack_data.status,
-                "device_name": "modbus_device"
-            }
-            self.sqlite_service.save_cems_data(data_dict)
-            print(f"DEBUG: Saved data to SQLite: {stack_data.stack_id}")
-        except Exception as e:
-            print(f"DEBUG: Error saving data to SQLite: {str(e)}")
 
     def _calculate_corrected_values(self, data: DataPoint) -> DataPoint:
         """คำนวณค่าที่ปรับแก้แล้วสำหรับ O2 7%"""
@@ -259,21 +220,13 @@ class DataService:
     def get_data_range(self, start_time: datetime = None, end_time: datetime = None, 
                       stack_id: str = None, limit: int = 1000) -> List[Dict]:
         """ดึงข้อมูลในช่วงเวลาที่กำหนด"""
-        if self.use_influxdb:
-            return self.influxdb_service.get_cems_data_range(start_time, end_time, stack_id, limit)
-        else:
-            # Fallback ไป SQLite
-            return self.sqlite_service.get_data_range(start_time, end_time, stack_id, limit)
+        return self.influxdb_service.get_cems_data_range(start_time, end_time, stack_id, limit)
 
     def search_data(self, start_time: datetime = None, end_time: datetime = None, 
                    search_column: str = None, search_value: str = None, 
                    stack_id: str = None, limit: int = 1000) -> List[Dict]:
         """ค้นหาข้อมูล"""
-        if self.use_influxdb:
-            return self.influxdb_service.search_cems_data(start_time, end_time, search_column, search_value, stack_id, limit)
-        else:
-            # Fallback ไป SQLite
-            return self.sqlite_service.search_cems_data(start_time, end_time, search_column, search_value, stack_id, limit)
+        return self.influxdb_service.search_cems_data(start_time, end_time, search_column, search_value, stack_id, limit)
 
     def _send_websocket_data(self, stack_data: StackData):
         """ส่งข้อมูลผ่าน WebSocket"""

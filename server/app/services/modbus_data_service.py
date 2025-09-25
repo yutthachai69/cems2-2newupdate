@@ -256,7 +256,7 @@ class ModbusDataService:
                     print(f"DEBUG: Error reading from {device_name}: {e}")
             
             # ลด debug logs - แสดงเฉพาะเมื่อมี error
-            # print(f"DEBUG: Combined data from all devices: {data}")
+            print(f"DEBUG: Combined data from all devices: {data}")
             return data if data else None
             
         except Exception as e:
@@ -278,9 +278,8 @@ class ModbusDataService:
                     # แปลงเป็น float32 ตาม format AB CD
                     value = self._registers_to_float32(result.registers, mapping.format)
                     data[mapping.name] = value
-                    # ลด debug log - แสดงเฉพาะเมื่อมี error เท่านั้น
-                    # if value != 0.0 or len(device_mappings) % 100 == 0:
-                    #     print(f"DEBUG: Read {mapping.name} from address {mapping.address}: {result.registers} -> {value}")
+                    # เปิด debug log เพื่อดูข้อมูลที่อ่านได้
+                    print(f"DEBUG: Read {mapping.name} from address {mapping.address}: {result.registers} -> {value}")
                             
             except Exception as e:
                 print(f"DEBUG: Error reading {mapping.name} from {device_name}: {e}")
@@ -344,7 +343,7 @@ class ModbusDataService:
                 "message": f"Connection test error: {str(e)}"
             }
 
-    def read_digital_input(self, device_name: str, address: int) -> int:
+    def read_coil_status(self, device_name: str, address: int) -> int:
         max_retries = 3
         retry_delay = 1  # seconds
         
@@ -367,8 +366,8 @@ class ModbusDataService:
                 if not client:
                     raise Exception(f"No client available for device {device_id}")
                 
-                # อ่านค่า digital input พร้อม timeout
-                result = client.read_discrete_inputs(address, 1, unit=device.unit)
+                # อ่านค่า coil status พร้อม timeout (เปลี่ยนจาก discrete inputs เป็น coils)
+                result = client.read_coils(address, 1, unit=device.unit)
                 
                 if result.isError():
                     raise Exception(f"Modbus read error: {result}")
@@ -377,7 +376,7 @@ class ModbusDataService:
                 return 1 if result.bits[0] else 0
                 
             except Exception as e:
-                print(f"Attempt {attempt + 1}/{max_retries} - Error reading digital input from {device_name} address {address}: {e}")
+                print(f"Attempt {attempt + 1}/{max_retries} - Error reading coil status from {device_name} address {address}: {e}")
                 
                 if attempt < max_retries - 1:
                     print(f"Retrying in {retry_delay} seconds...")

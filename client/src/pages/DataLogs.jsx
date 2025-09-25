@@ -113,7 +113,7 @@ export default function DataLogs() {
     try {
       // ถ้าไม่มีการค้นหาและไม่มีการเลือกคอลัมน์เฉพาะและไม่มีการเลือกวันที่ ให้แสดงข้อมูล 100 รายการล่าสุด
       if (!searchTerm && !from && !to && searchScope === "all") {
-        const res = await fetch(`${API}/api/sqlite/data/range?limit=100`);
+        const res = await fetch(`${API}/api/data/range?limit=100`);
         const result = await res.json();
         
         if (result.success && result.data) {
@@ -180,7 +180,7 @@ export default function DataLogs() {
       }
 
       console.log("Search params:", params.toString());
-      const res = await fetch(`${API}/api/sqlite/data/search?${params}`);
+      const res = await fetch(`${API}/api/data/search?${params}`);
       const result = await res.json();
       console.log("Search result:", result);
 
@@ -300,26 +300,19 @@ export default function DataLogs() {
       params.append("format", downloadSettings.fileFormat);
       
       // เรียก API
-      const response = await fetch(`${API}/api/sqlite/data/download?${params}`);
+      const response = await fetch(`${API}/api/data/download?${params}`);
       const result = await response.json();
+      
+      console.log('Download response:', result);
+      console.log('Response success:', result.success);
+      console.log('Data length:', result.data ? result.data.length : 'No data');
+      console.log('Filename:', result.filename);
       
       if (result.success) {
         // Handle different file formats
         let blob;
-        let mimeType;
         
-        if (downloadSettings.fileFormat === 'excel') {
-          // Decode base64 for Excel
-          const binaryString = atob(result.data);
-          const bytes = new Uint8Array(binaryString.length);
-          for (let i = 0; i < binaryString.length; i++) {
-            bytes[i] = binaryString.charCodeAt(i);
-          }
-          blob = new Blob([bytes], { 
-            type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
-          });
-          mimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
-        } else if (downloadSettings.fileFormat === 'pdf') {
+        if (downloadSettings.fileFormat === 'pdf') {
           // Decode base64 for PDF
           const binaryString = atob(result.data);
           const bytes = new Uint8Array(binaryString.length);
@@ -327,25 +320,36 @@ export default function DataLogs() {
             bytes[i] = binaryString.charCodeAt(i);
           }
           blob = new Blob([bytes], { type: 'application/pdf' });
-          mimeType = 'application/pdf';
         } else {
           // CSV format (text)
           blob = new Blob([result.data], { type: 'text/csv' });
-          mimeType = 'text/csv';
         }
         
-        const url = URL.createObjectURL(blob);
-        
         // สร้างลิงก์ดาวน์โหลด
+        const url = URL.createObjectURL(blob);
         const link = document.createElement('a');
         link.href = url;
         link.download = result.filename || `cems-data.${downloadSettings.fileFormat}`;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
+        link.style.display = 'none';
         
-        // ล้าง URL object
-        URL.revokeObjectURL(url);
+        // Add to DOM and trigger click
+        document.body.appendChild(link);
+        
+        // Try multiple approaches
+        try {
+          link.click();
+          console.log('Link clicked successfully');
+        } catch (error) {
+          console.error('Click failed:', error);
+          // Fallback: open in new window
+          window.open(url, '_blank');
+        }
+        
+        // Cleanup
+        setTimeout(() => {
+          document.body.removeChild(link);
+          URL.revokeObjectURL(url);
+        }, 1000);
         
         showNotification('ดาวน์โหลดสำเร็จ!', 'success');
         setShowDownloadModal(false);
@@ -735,7 +739,6 @@ export default function DataLogs() {
                   <div className="flex gap-2">
                     {[
                       { value: 'csv', label: 'CSV' },
-                      { value: 'excel', label: 'Excel' },
                       { value: 'pdf', label: 'PDF' }
                     ].map(format => (
                       <label key={format.value} className="flex items-center">

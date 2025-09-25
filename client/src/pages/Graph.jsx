@@ -312,28 +312,33 @@ export default function Graph() {
   const [modalOpen, setModalOpen] = useState(false);
   const [modalSeries, setModalSeries] = useState(null);
   const [tooltip, setTooltip] = useState({ show: false, x: 0, y: 0, data: null });
-  const [liveWindowMs, setLiveWindowMs] = useState(5 * 60 * 1000); // 5 นาทีเริ่มต้น
+  const [liveWindowMs, setLiveWindowMs] = useState(2 * 60 * 1000); // 2 นาทีเริ่มต้น (ตามตัวอย่าง)
   
   const prevRangeRef = useRef(timeRange);
-  const lastTsRef = useRef({});
+  // const lastTsRef = useRef({}); // ไม่ใช้แล้ว
   const fetchingRef = useRef(false);
   const modalCanvasRef = useRef(null);
   
-  const [series, setSeries] = useState(() => {
-    // โหลดข้อมูลจาก localStorage เมื่อ component mount
-    try {
-      const saved = localStorage.getItem('cems_graph_data');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        console.log("📊 Loaded graph data from localStorage:", parsed.length, "series");
-        return parsed;
-      }
-    } catch (error) {
-      console.warn("⚠️ Error loading graph data from localStorage:", error);
-    }
-    
-    // ค่าเริ่มต้นถ้าไม่มีข้อมูลใน localStorage
-    return [
+  // const loadSeriesFromStorage = () => {
+  //   try {
+  //     const savedSeries = localStorage.getItem('graph_series_data');
+  //     if (savedSeries) {
+  //       const parsed = JSON.parse(savedSeries);
+  //       // ตรวจสอบว่าข้อมูลไม่เก่าเกินไป (ไม่เกิน 1 ชั่วโมง)
+  //       const now = Date.now();
+  //       const filtered = parsed.map(s => ({
+  //         ...s,
+  //         data: s.data.filter(d => (now - d.t) < 60 * 60 * 1000) // เก็บข้อมูลไม่เกิน 1 ชั่วโมง
+  //       }));
+  //       return filtered;
+  //     }
+  //   } catch (error) {
+  //     console.warn('Failed to load series from localStorage:', error);
+  //   }
+  //   return null;
+  // };
+
+  const [series, setSeries] = useState([
     { name: "SO2", unit: "ppm", data: [], color: "#10b981" },
     { name: "NOx", unit: "ppm", data: [], color: "#3b82f6" },
     { name: "O2", unit: "%", data: [], color: "#eab308" },
@@ -343,8 +348,16 @@ export default function Graph() {
     { name: "Velocity", unit: "m/s", data: [], color: "#8b5cf6" },
     { name: "Flowrate", unit: "m³/h", data: [], color: "#06b6d4" },
     { name: "Pressure", unit: "Pa", data: [], color: "#ec4899" },
-    ];
-  });
+  ]);
+
+  // const saveSeriesToStorage = (seriesData) => {
+  //   try {
+  //     localStorage.setItem('graph_series_data', JSON.stringify(seriesData));
+  //     console.log('💾 Saved series data to localStorage');
+  //   } catch (error) {
+  //     console.warn('Failed to save series to localStorage:', error);
+  //   }
+  // };
 
   const API = import.meta.env.VITE_BACKEND_URL || "http://127.0.0.1:8000";
 const WS_URL = import.meta.env.VITE_WS_URL || "ws://127.0.0.1:8000";
@@ -353,16 +366,6 @@ const WS_URL = import.meta.env.VITE_WS_URL || "ws://127.0.0.1:8000";
   if (!API || API === "undefined") {
     console.warn("API URL is not properly configured");
   }
-
-  // บันทึกข้อมูลกราฟลง localStorage ทุกครั้งที่ series เปลี่ยน
-  useEffect(() => {
-    try {
-      localStorage.setItem('cems_graph_data', JSON.stringify(series));
-      console.log("💾 Saved graph data to localStorage:", series.length, "series");
-    } catch (error) {
-      console.warn("⚠️ Error saving graph data to localStorage:", error);
-    }
-  }, [series]);
 
   // ฟังก์ชันตัดข้อมูลเก่า + บีบจำนวนจุด (เก็บข้อมูลเก่าไว้มากขึ้น)
   const pruneWindow = (points, now, windowMs, maxPoints) => {
@@ -375,11 +378,11 @@ const WS_URL = import.meta.env.VITE_WS_URL || "ws://127.0.0.1:8000";
       p.t >= cutoff
     );
 
-    // เก็บข้อมูลเก่าไว้มากขึ้น - เพิ่ม buffer สำหรับการแสดงผล
-    const bufferPoints = Math.max(50, Math.floor(maxPoints * 0.3)); // เก็บข้อมูลเก่าเพิ่ม 30% หรืออย่างน้อย 50 จุด
+    // เก็บข้อมูลเก่าไว้มากขึ้น - เพิ่ม buffer สำหรับการแสดงผล (ตามตัวอย่าง)
+    const bufferPoints = Math.max(20, Math.floor(maxPoints * 0.2)); // ลด buffer เป็น 20% เพื่อให้เหมือนตัวอย่าง
     if (pruned.length > maxPoints) {
       // เก็บข้อมูลเก่าไว้มากขึ้นโดยการ slice จากจุดที่เก่ากว่า
-      const keepOldData = Math.max(bufferPoints, Math.floor(maxPoints * 0.4));
+      const keepOldData = Math.max(bufferPoints, Math.floor(maxPoints * 0.3));
       pruned = [...points.slice(-keepOldData), ...pruned.slice(-(maxPoints - keepOldData))];
     }
     
@@ -392,46 +395,10 @@ const WS_URL = import.meta.env.VITE_WS_URL || "ws://127.0.0.1:8000";
     return pruned;
   };
 
-  // ฟังก์ชันสำหรับเก็บข้อมูลเก่าไว้มากขึ้น (สำหรับ localStorage)
-  const preserveHistoricalData = (points, now, maxHistoricalPoints = 5000) => {
-    // เก็บข้อมูลเก่าไว้มากขึ้น - จำกัดแค่จำนวนจุดสูงสุด
-    if (points.length > maxHistoricalPoints) {
-      // เก็บข้อมูลล่าสุด 80% และข้อมูลเก่า 20%
-      const recentCount = Math.floor(maxHistoricalPoints * 0.8);
-      const oldCount = Math.floor(maxHistoricalPoints * 0.2);
-      
-      const recent = points.slice(-recentCount);
-      const old = points.slice(0, oldCount);
-      
-      return [...old, ...recent];
-    }
-    
-    return points;
-  };
-
   // ฟังก์ชันเปิด Modal
   const openModal = (series) => {
     setModalSeries(series);
     setModalOpen(true);
-  };
-
-  // ฟังก์ชันล้างข้อมูลกราฟ
-  const clearGraphData = () => {
-    const emptySeries = [
-      { name: "SO2", unit: "ppm", data: [], color: "#10b981" },
-      { name: "NOx", unit: "ppm", data: [], color: "#3b82f6" },
-      { name: "O2", unit: "%", data: [], color: "#eab308" },
-      { name: "CO", unit: "ppm", data: [], color: "#f59e0b" },
-      { name: "Dust", unit: "mg/m³", data: [], color: "#ef4444" },
-      { name: "Temperature", unit: "°C", data: [], color: "#f97316" },
-      { name: "Velocity", unit: "m/s", data: [], color: "#8b5cf6" },
-      { name: "Flowrate", unit: "m³/h", data: [], color: "#06b6d4" },
-      { name: "Pressure", unit: "Pa", data: [], color: "#ec4899" },
-    ];
-    
-    setSeries(emptySeries);
-    localStorage.removeItem('cems_graph_data');
-    console.log("🗑️ Cleared graph data");
   };
 
   // ฟังก์ชันปิด Modal
@@ -541,9 +508,9 @@ const WS_URL = import.meta.env.VITE_WS_URL || "ws://127.0.0.1:8000";
           
           // ถ้าเป็นครั้งแรกที่เข้าสู่โหมด Live ให้ดึงข้อมูลย้อนหลังตาม liveWindowMs
           if (isFirstLiveLoad) {
-            // ดึงข้อมูลย้อนหลังตาม liveWindowMs จาก SQLite
+            // ดึงข้อมูลย้อนหลังตาม liveWindowMs จาก InfluxDB
             const windowAgo = new Date(Date.now() - liveWindowMs);
-            const historicalResponse = await fetch(`${API}/api/sqlite/data/range?start_date=${windowAgo.toISOString()}&end_date=${new Date().toISOString()}&limit=10000`);
+            const historicalResponse = await fetch(`${API}/api/data/range?stack_id=${selectedStack}&start_time=${windowAgo.toISOString()}&end_time=${new Date().toISOString()}&limit=10000`);
             const historicalResult = await historicalResponse.json();
             
             if (historicalResult.success && historicalResult.data && Array.isArray(historicalResult.data) && historicalResult.data.length > 0) {
@@ -583,8 +550,8 @@ const WS_URL = import.meta.env.VITE_WS_URL || "ws://127.0.0.1:8000";
           }
           
           // ก่อน map: ประเมิน max จุดที่ต้องการเก็บในหน้าต่าง live
-          const sampleMs = 5000; // 5 วินาที
-          const maxPtsInWindow = Math.ceil(liveWindowMs / sampleMs) + 20;
+          // const sampleMs = 5000; // 5 วินาที
+          // const maxPtsInWindow = Math.ceil(liveWindowMs / sampleMs) + 20; // ไม่ใช้แล้ว
 
           // อัปเดตข้อมูลแต่ละ series (เพิ่มจุดใหม่)
           setSeries(prev => prev.map(s => {
@@ -605,53 +572,32 @@ const WS_URL = import.meta.env.VITE_WS_URL || "ws://127.0.0.1:8000";
                 default: value = 0;
               }
             } else {
-              // Mock data สำหรับทดสอบกราฟ
-              const mockValues = {
-                "SO2": 5.0 + Math.sin(now / 10000) * 2,
-                "NOx": 3.0 + Math.cos(now / 15000) * 1.5,
-                "O2": 8.0 + Math.sin(now / 20000) * 1,
-                "CO": 2.0 + Math.cos(now / 12000) * 0.8,
-                "Dust": 1.5 + Math.sin(now / 18000) * 0.5,
-                "Temperature": 25.0 + Math.sin(now / 25000) * 3,
-                "Velocity": 12.0 + Math.cos(now / 16000) * 2,
-                "Flowrate": 1000.0 + Math.sin(now / 22000) * 100,
-                "Pressure": -50.0 + Math.cos(now / 14000) * 10
-              };
-              value = mockValues[s.name] || 0;
+              // ไม่มีข้อมูลจริง - ใช้ค่า 0
+              value = 0;
             }
 
-            const ts = stackData.timestamp
-              ? new Date(stackData.timestamp).getTime()
-              : now; // ใช้ now ที่ประกาศไว้ด้านบน ให้ทุกซีรีส์อ้างอิงเวลาเดียวกัน
+            // ✅ ใช้เวลา server ถ้ามี (fallback เป็น now)
+            const ts = (() => {
+              const iso = stackData.timestamp || stackData.data?.timestamp;
+              const t = iso ? Date.parse(iso) : NaN;
+              return Number.isFinite(t) ? t : now;
+            })();
 
-            // ตรวจสอบว่าข้อมูลใหม่หรือไม่ (เว้นช่วงรับข้อมูลอย่างน้อย 5 วินาที)
-            const lastPoint = s.data[s.data.length - 1];
-            const minStepMs = 5000; // 5 วินาที
-            
-            if (lastPoint) {
-              // ข้ามถ้าเวลาและค่าเหมือนเดิม
-              if (lastPoint.t === ts && lastPoint.y === Number(value)) {
-                return s;
-              }
-              // ข้ามถ้าข้อมูลถี่เกินไป (น้อยกว่า 5 วินาที)
-              if ((ts - lastPoint.t) < minStepMs) {
-                return s;
-              }
+            const data = [...(s.data || [])];
+            const last = data[data.length - 1];
+
+            // ✅ ถ้าเวลาเท่ากันเท่านั้น → อัปเดตจุดล่าสุด; ถ้าไม่เท่ากันให้ push ต่อเนื่อง
+            if (last && ts === last.t) {
+              data[data.length - 1] = { t: ts, y: Number(value) };
+            } else {
+              data.push({ t: ts, y: Number(value) });
             }
-            lastTsRef.current[s.name] = ts;
 
-            // เพิ่มจุดใหม่เข้าไปในข้อมูลเก่า (เก็บข้อมูลเก่าไว้)
-            const next = [...s.data, { t: ts, y: Number(value) || 0 }];
+            // ✅ เก็บข้อมูลเก่าไว้มากขึ้น + แสดงต่อเนื่อง (ตามตัวอย่าง 1-2 นาที)
+            const maxPtsInWindow = Math.ceil(liveWindowMs / 1000) + 50; // ลดจาก 200 เป็น 50 เพื่อให้เหมือนตัวอย่าง
+            const pruned = pruneWindow(data, ts, liveWindowMs, maxPtsInWindow);
             
-            // จำกัดเฉพาะหน้าต่าง live + บีบจำนวนจุด (แต่เก็บข้อมูลเก่าไว้)
-            const windowed = pruneWindow(next, now, liveWindowMs, maxPtsInWindow);
-
-            // กันโตแบบสะสมระยะยาว (เผื่อ live นาน ๆ) - แต่เก็บข้อมูลเก่าไว้มากขึ้น
-            const cap = 10000; // ลด cap เป็น 10000 จุดเพื่อประหยัด memory
-            const compacted = windowed.length > cap ? windowed.slice(-Math.floor(cap * 0.8)) : windowed; // เก็บข้อมูลเก่าไว้ 80%
-
-
-            return { ...s, data: compacted };
+            return { ...s, data: pruned };
           }));
           
           // ตรวจสอบสถานะการเชื่อมต่อ
@@ -670,48 +616,59 @@ const WS_URL = import.meta.env.VITE_WS_URL || "ws://127.0.0.1:8000";
         
         switch(timeRange) {
           case "1h":
-            // ใช้ข้อมูลจาก 2025-09-12 (ข้อมูลที่มีใน DB)
-            startDate = new Date("2025-09-12T00:00:00.000Z");
+            // ใช้ข้อมูลล่าสุด 1 ชั่วโมงจากข้อมูลที่มีจริง
+            startDate = new Date(Date.now() - 24 * 60 * 60 * 1000); // ใช้ข้อมูล 24 ชั่วโมงล่าสุด
             break;
           case "6h":
-            // ใช้ข้อมูลจาก 2025-09-12 (ข้อมูลที่มีใน DB)
-            startDate = new Date("2025-09-12T00:00:00.000Z");
+            // ใช้ข้อมูลล่าสุด 6 ชั่วโมงจากข้อมูลที่มีจริง
+            startDate = new Date(Date.now() - 24 * 60 * 60 * 1000); // ใช้ข้อมูล 24 ชั่วโมงล่าสุด
             break;
           case "1d":
-            // ใช้ข้อมูลจาก 2025-09-12 (ข้อมูลที่มีใน DB)
-            startDate = new Date("2025-09-12T00:00:00.000Z");
+            // ใช้ข้อมูลล่าสุด 1 วันจากข้อมูลที่มีจริง
+            startDate = new Date(Date.now() - 24 * 60 * 60 * 1000); // ใช้ข้อมูล 24 ชั่วโมงล่าสุด
             break;
           case "5d":
-            // ใช้ข้อมูลจาก 2025-09-12 (ข้อมูลที่มีใน DB)
-            startDate = new Date("2025-09-12T00:00:00.000Z");
+            // ใช้ข้อมูลทั้งหมดที่มี (ประมาณ 1 วัน)
+            startDate = new Date(Date.now() - 24 * 60 * 60 * 1000); // ใช้ข้อมูล 24 ชั่วโมงล่าสุด
             break;
           case "1m":
-            // ใช้ข้อมูลจาก 2025-09-12 (ข้อมูลที่มีใน DB)
-            startDate = new Date("2025-09-12T00:00:00.000Z");
+            // ใช้ข้อมูลทั้งหมดที่มี (ประมาณ 1 วัน)
+            startDate = new Date(Date.now() - 24 * 60 * 60 * 1000); // ใช้ข้อมูล 24 ชั่วโมงล่าสุด
             break;
           case "6m":
-            // ใช้ข้อมูลจาก 2025-09-12 (ข้อมูลที่มีใน DB)
-            startDate = new Date("2025-09-12T00:00:00.000Z");
+            // ใช้ข้อมูลทั้งหมดที่มี (ประมาณ 1 วัน)
+            startDate = new Date(Date.now() - 24 * 60 * 60 * 1000); // ใช้ข้อมูล 24 ชั่วโมงล่าสุด
             break;
           case "1y":
-            // ใช้ข้อมูลจาก 2025-09-12 (ข้อมูลที่มีใน DB)
-            startDate = new Date("2025-09-12T00:00:00.000Z");
+            // ใช้ข้อมูลทั้งหมดที่มี (ประมาณ 1 วัน)
+            startDate = new Date(Date.now() - 24 * 60 * 60 * 1000); // ใช้ข้อมูล 24 ชั่วโมงล่าสุด
             break;
           default:
             startDate = null;
         }
         
-        // กำหนด endDate เป็นวันที่ข้อมูลใน DB (2025-09-12)
-        const endDate = new Date("2025-09-12T23:59:59.999Z");
+        // กำหนด endDate เป็นเวลาปัจจุบัน หรือใช้ข้อมูลล่าสุดที่มีใน DB
+        const endDate = new Date();
         
-        let url = `${API}/api/sqlite/data/range?limit=50000`; // เพิ่ม limit เป็น 50000
+        let url = `${API}/api/data/range?limit=50000&stack_id=${selectedStack}`; // เพิ่ม stack_id parameter
         if (startDate) {
-          url += `&start_date=${startDate.toISOString()}`;
+          url += `&start_time=${startDate.toISOString()}`;
         }
-        url += `&end_date=${endDate.toISOString()}`;
+        url += `&end_time=${endDate.toISOString()}`;
         
         response = await fetch(url);
         result = await response.json();
+        
+        console.log(`Historical API call: ${url}`);
+        console.log(`Historical response:`, result);
+        
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        if (!result.success) {
+          throw new Error(`API Error: ${result.message || 'Unknown error'}`);
+        }
         
       }
       
@@ -770,21 +727,12 @@ const WS_URL = import.meta.env.VITE_WS_URL || "ws://127.0.0.1:8000";
             Number.isFinite(d.y)
           );
           
-          // รวมข้อมูลเก่ากับข้อมูลใหม่ (เก็บข้อมูลเก่าไว้)
-          const existingData = s.data || [];
-          const combinedData = [...existingData, ...seriesData];
+          console.log(`Historical ${s.name} data points:`, seriesData.length);
           
-          // ลบข้อมูลซ้ำ (ถ้ามี)
-          const uniqueData = combinedData.filter((item, index, self) => 
-            index === self.findIndex(t => t.t === item.t)
-          );
-          
-          // เรียงลำดับตามเวลา
-          const sortedData = uniqueData.sort((a, b) => a.t - b.t);
-          
+          // ใช้ข้อมูลใหม่เท่านั้น (ไม่รวมข้อมูลเก่า)
           return {
             ...s,
-            data: sortedData
+            data: seriesData
           };
         }));
         
@@ -792,10 +740,16 @@ const WS_URL = import.meta.env.VITE_WS_URL || "ws://127.0.0.1:8000";
         setIsConnected(true);
         setLastUpdate(new Date());
       } else {
+        console.warn("No historical data found");
         setIsConnected(false);
       }
     } catch (error) {
       console.error("Failed to fetch data:", error);
+      console.error("Error details:", {
+        name: error.name,
+        message: error.message,
+        stack: error.stack
+      });
       setIsConnected(false);
       // แสดงข้อความ error ให้ผู้ใช้ทราบ
       if (error.name === 'TypeError' && error.message.includes('fetch')) {
@@ -806,20 +760,31 @@ const WS_URL = import.meta.env.VITE_WS_URL || "ws://127.0.0.1:8000";
     }
   }, [selectedStack, timeRange, liveWindowMs, isFirstLiveLoad, API]);
 
+  // บันทึกข้อมูลลง localStorage เมื่อ series เปลี่ยนแปลง
+  // useEffect(() => {
+  //   if (series && series.length > 0) {
+  //     // บันทึกเฉพาะเมื่อมีข้อมูลจริง
+  //     const hasData = series.some(s => s.data && s.data.length > 0);
+  //     if (hasData) {
+  //       saveSeriesToStorage(series);
+  //     }
+  //   }
+  // }, [series]);
+
   // ดึงข้อมูลเริ่มต้น
   useEffect(() => {
     // รีเซ็ตก็ต่อเมื่อเพิ่ง "สลับ" มา realtime เท่านั้น
     if (timeRange === "realtime" && prevRangeRef.current !== "realtime") {
-      // ไม่ล้างข้อมูลทันที แต่ให้ fetchData ดึงข้อมูลย้อนหลังก่อน
-      setIsFirstLiveLoad(true); // ตั้งค่าให้เป็นครั้งแรก
+      // ตั้งค่าให้ดึงข้อมูลย้อนหลังเสมอ
+      setIsFirstLiveLoad(true);
     }
     prevRangeRef.current = timeRange;
     fetchData();
   }, [selectedStack, timeRange, fetchData]);
 
-  // WebSocket connection for real-time data - ใช้วิธีง่ายๆ
+  // WebSocket connection for real-time data
   useEffect(() => {
-    if (timeRange !== "realtime") return;
+    if (timeRange !== "realtime" || !running) return;
 
     let ws = null;
     let reconnectTimeout = null;
@@ -854,91 +819,75 @@ const WS_URL = import.meta.env.VITE_WS_URL || "ws://127.0.0.1:8000";
       ws.onmessage = (event) => {
         try {
           const message = JSON.parse(event.data);
-          console.log("Graph WebSocket data received:", message);
-          
-          if (message.type === "data" && message.data && message.data.length > 0) {
-            const stackData = message.data[0];
-            
-            // ตรวจสอบโครงสร้างข้อมูล
-            if (!stackData.data || !stackData.corrected_data) {
-              console.warn("⚠️ Missing data or corrected_data in WebSocket message");
-              return;
+          if (message.type !== "data" || !message.data?.length) return;
+          const stackData = message.data[0];
+          const raw = stackData.data || {};
+          const corrected = stackData.corrected_data || {};
+
+          // ✅ ใช้เวลา server ถ้ามี (fallback เป็น now)
+          const ts = (() => {
+            const iso = raw.timestamp || corrected.timestamp || null;
+            const t = iso ? Date.parse(iso) : NaN;
+            return Number.isFinite(t) ? t : Date.now();
+          })();
+
+          setSeries(prev => prev.map(s => {
+            // ดึงค่าตามชื่อซีรีส์
+            let value = 0;
+            if (s.name.includes("Corr")) {
+              const base = s.name.replace("Corr", "");
+              value = Number(corrected?.[base] ?? 0);
+            } else {
+              value = Number(raw?.[s.name] ?? 0);
             }
-            
-            const data = stackData.data;
-            const correctedData = stackData.corrected_data;
-            const now = Date.now();
-            
-            console.log("🔍 Raw data:", data);
-            console.log("🔍 Corrected data:", correctedData);
-            
-            // อัพเดทข้อมูลสำหรับแต่ละ series
-            setSeries(prevSeries => {
-              return prevSeries.map(s => {
-                let value = 0;
-                
-                try {
-                  if (s.name.includes("Corr") && correctedData) {
-                    const baseName = s.name.replace("Corr", "");
-                    value = correctedData[baseName] !== undefined ? correctedData[baseName] : 0;
-                    console.log(`📊 ${s.name} (${baseName}):`, value);
-                  } else {
-                    value = data[s.name] !== undefined ? data[s.name] : 0;
-                    console.log(`📊 ${s.name}:`, value);
-                  }
-                  
-                  if (typeof value !== 'number' || isNaN(value)) {
-                    console.warn(`⚠️ Invalid value for ${s.name}:`, value);
-                    value = 0;
-                  }
-                } catch (error) {
-                  console.error(`❌ Error processing ${s.name}:`, error);
-                  value = 0;
-                }
-                
-                // เพิ่มจุดใหม่เข้าไปในข้อมูลเก่า
-                const newData = [...(s.data || []), { t: now, y: value }];
-                
-                // เก็บข้อมูลเก่าไว้มากขึ้นสำหรับ localStorage
-                const preservedData = preserveHistoricalData(newData, now, 5000);
-                
-                return {
-                  ...s,
-                  data: preservedData
-                };
-              });
-            });
-            
-            setLastUpdate(new Date());
-            setIsConnected(true);
-          }
-        } catch (error) {
-          console.error("Error parsing Graph WebSocket message:", error);
+            if (!Number.isFinite(value) || Math.abs(value) > 1e6) value = 0; // กันค่าเพี้ยน
+
+            const data = [...(s.data || [])];
+            const last = data[data.length - 1];
+
+            // ✅ ถ้าเวลาเท่ากันเท่านั้น → อัปเดตจุดล่าสุด; ถ้าไม่เท่ากันให้ push ต่อเนื่อง
+            if (last && ts === last.t) {
+              data[data.length - 1] = { t: ts, y: value };
+            } else {
+              data.push({ t: ts, y: value });
+            }
+
+            // ✅ เก็บข้อมูลเก่าไว้มากขึ้น + แสดงต่อเนื่อง (ตามตัวอย่าง 1-2 นาที)
+            const maxPtsInWindow = Math.ceil(liveWindowMs / 1000) + 50; // ลดจาก 200 เป็น 50 เพื่อให้เหมือนตัวอย่าง
+            const pruned = pruneWindow(data, ts, liveWindowMs, maxPtsInWindow);
+            return { ...s, data: pruned };
+          }));
+
+          setLastUpdate(new Date());
+          setIsConnected(true);
+        } catch (e) {
+          console.error("WS parse error", e);
         }
       };
 
-      ws.onerror = (e) => {
-        if (!isMounted) return;
-        console.warn("⚠️ Graph WebSocket error:", e);
-        setIsConnected(false);
-      };
+       ws.onerror = (e) => {
+         if (!isMounted) return;
+         console.warn("⚠️ Graph WebSocket error:", e);
+         setIsConnected(false);
+         // ไม่ reconnect ทันที ให้รอ onclose
+       };
 
-      ws.onclose = (e) => {
-        if (!isMounted) return;
-        console.warn("🔌 Graph WebSocket closed", {
-          code: e.code,
-          reason: e.reason,
-          wasClean: e.wasClean
-        });
-        ws = null;
-        setIsConnected(false);
-        
-        // Only reconnect if not a clean close and component is still mounted
-        if (e.code !== 1000 && isMounted) {
-          console.log("🔄 Graph scheduling reconnect in 3s...");
-          reconnectTimeout = setTimeout(connect, 3000);
-        }
-      };
+       ws.onclose = (e) => {
+         if (!isMounted) return;
+         console.warn("🔌 Graph WebSocket closed", {
+           code: e.code,
+           reason: e.reason,
+           wasClean: e.wasClean
+         });
+         ws = null;
+         setIsConnected(false);
+         
+         // Only reconnect if not a clean close and component is still mounted
+         if (e.code !== 1000 && isMounted) {
+           console.log("🔄 Graph scheduling reconnect in 5s...");
+           reconnectTimeout = setTimeout(connect, 5000); // เพิ่มเวลาเป็น 5 วินาที
+         }
+       };
     };
 
     connect();
@@ -957,7 +906,16 @@ const WS_URL = import.meta.env.VITE_WS_URL || "ws://127.0.0.1:8000";
         ws = null;
       }
     };
-  }, [timeRange, selectedStack]);
+  }, [timeRange, selectedStack, WS_URL, liveWindowMs, running]);
+
+  // Polling สำหรับโหมด historical (ที่ไม่ใช่ realtime)
+  useEffect(() => {
+    if (timeRange === "realtime" || !running) return;
+    
+    const interval = 10000; // อัปเดตทุก 10 วินาทีสำหรับ historical
+    const id = setInterval(fetchData, interval);
+    return () => clearInterval(id);
+  }, [running, selectedStack, timeRange, fetchData]);
 
   // รีเฟรชข้อมูลเมื่อเปลี่ยน Live Window
   useEffect(() => {
@@ -1052,15 +1010,15 @@ const WS_URL = import.meta.env.VITE_WS_URL || "ws://127.0.0.1:8000";
     <div className="min-h-screen bg-gray-50 p-6">
       <div className="max-w-7xl mx-auto space-y-6">
         {/* Header */}
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 sm:p-6">
-          <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
-            <div className="min-w-0 flex-1">
-              <h1 className="text-xl sm:text-2xl font-semibold text-gray-900">
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-2xl font-semibold text-gray-900">
                 Real-time Data Monitoring
               </h1>
               <p className="text-gray-600 text-sm">Live emission data visualization - Individual parameter charts</p>
             </div>
-            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-4 w-full lg:w-auto">
+            <div className="flex items-center gap-4">
               <div className="flex items-center gap-2">
                 <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`}></div>
                 <span className="text-sm text-gray-600">{isConnected ? 'Connected' : 'Disconnected'}</span>
@@ -1074,10 +1032,9 @@ const WS_URL = import.meta.env.VITE_WS_URL || "ws://127.0.0.1:8000";
                   })}
                 </div>
               )}
-              <div className="flex items-center gap-2">
                 <button
                   onClick={() => setRunning((v) => !v)}
-                  className={`px-3 sm:px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
+                className={`px-4 py-2 font-medium rounded-lg transition-colors ${
                     running 
                       ? 'bg-red-600 hover:bg-red-700 text-white' 
                       : 'bg-green-600 hover:bg-green-700 text-white'
@@ -1087,20 +1044,19 @@ const WS_URL = import.meta.env.VITE_WS_URL || "ws://127.0.0.1:8000";
                 </button>
                 <button
                   onClick={fetchData}
-                  className="px-3 sm:px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors"
                 >
                   Refresh
                 </button>
-              </div>
             </div>
           </div>
         </div>
 
         {/* Controls */}
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 sm:p-6 overflow-hidden">
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
           {/* Status Bar */}
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-4 p-3 bg-gray-50 rounded-lg gap-2 sm:gap-0">
-            <div className="flex flex-wrap items-center gap-4">
+          <div className="flex items-center justify-between mb-4 p-3 bg-gray-50 rounded-lg">
+            <div className="flex items-center gap-4">
               <div className="flex items-center gap-2">
                 <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`}></div>
                 <span className="text-sm font-medium text-gray-700">
@@ -1117,7 +1073,7 @@ const WS_URL = import.meta.env.VITE_WS_URL || "ws://127.0.0.1:8000";
                 </div>
               )}
             </div>
-            <div className="text-sm text-gray-600 text-left sm:text-right">
+            <div className="text-sm text-gray-600">
               Total Data Points: {series.reduce((total, s) => total + s.data.length, 0)} | 
               Update Interval: {timeRange === "realtime" ? "5s" : "10s"} |
               Live Window: {liveWindowMs / 1000 / 60} min |
@@ -1127,14 +1083,14 @@ const WS_URL = import.meta.env.VITE_WS_URL || "ws://127.0.0.1:8000";
           </div>
           
           {/* Top Row - Stack and Time Range */}
-          <div className="flex flex-col sm:flex-row flex-wrap items-start sm:items-center gap-4 sm:gap-6 mb-4">
+          <div className="flex flex-wrap items-center gap-6 mb-4">
             {/* Stack Selector */}
-            <div className="flex items-center gap-2 min-w-0">
-              <label className="text-sm font-medium text-gray-700 whitespace-nowrap">Stack:</label>
+            <div className="flex items-center gap-2">
+              <label className="text-sm font-medium text-gray-700">Stack:</label>
               <select
                 value={selectedStack}
                 onChange={(e) => setSelectedStack(e.target.value)}
-                className="rounded-lg border border-gray-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 min-w-0"
+                className="rounded-lg border border-gray-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200"
               >
                 <option value="stack1">Stack 1</option>
                 <option value="stack2">Stack 2</option>
@@ -1143,14 +1099,14 @@ const WS_URL = import.meta.env.VITE_WS_URL || "ws://127.0.0.1:8000";
             </div>
 
             {/* Time Range Selector */}
-            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 min-w-0 w-full sm:w-auto">
-              <label className="text-sm font-medium text-gray-700 whitespace-nowrap">Time Range:</label>
-              <div className="flex flex-wrap bg-gray-100 rounded-lg p-1 gap-1 w-full sm:w-auto">
+            <div className="flex items-center gap-2">
+              <label className="text-sm font-medium text-gray-700">Time Range:</label>
+              <div className="flex bg-gray-100 rounded-lg p-1">
                 {["realtime", "1h", "6h", "1d", "5d", "1m", "6m", "1y"].map((range) => (
                   <button
                     key={range}
                     onClick={() => setTimeRange(range)}
-                    className={`px-2 sm:px-3 py-1 text-xs sm:text-sm font-medium rounded-md transition-colors whitespace-nowrap ${
+                    className={`px-3 py-1 text-sm font-medium rounded-md transition-colors ${
                       timeRange === range
                         ? 'bg-white text-blue-600 shadow-sm'
                         : 'text-gray-600 hover:text-gray-900'
@@ -1171,14 +1127,14 @@ const WS_URL = import.meta.env.VITE_WS_URL || "ws://127.0.0.1:8000";
 
             {/* Live Window Selector (แสดงเฉพาะเมื่อเป็น Live) */}
             {timeRange === "realtime" && (
-              <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 min-w-0 w-full sm:w-auto">
-                <label className="text-sm font-medium text-gray-700 whitespace-nowrap">Live window:</label>
-                <div className="flex flex-wrap bg-gray-100 rounded-lg p-1 gap-1 w-full sm:w-auto">
+              <div className="flex items-center gap-2">
+                <label className="text-sm font-medium text-gray-700">Live window:</label>
+                <div className="flex bg-gray-100 rounded-lg p-1">
                   {[120_000, 300_000, 600_000, 1200_000].map(w => (
                     <button
                       key={w}
                       onClick={() => setLiveWindowMs(w)}
-                      className={`px-2 sm:px-3 py-1 text-xs sm:text-sm font-medium rounded-md transition-colors whitespace-nowrap ${
+                      className={`px-3 py-1 text-sm font-medium rounded-md transition-colors ${
                         liveWindowMs === w 
                           ? 'bg-white text-blue-600 shadow-sm' 
                           : 'text-gray-600 hover:text-gray-900'
@@ -1198,7 +1154,7 @@ const WS_URL = import.meta.env.VITE_WS_URL || "ws://127.0.0.1:8000";
         </div>
 
         {/* Individual Charts Grid */}
-        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 sm:gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {series.map((s) => {
             const latest = s.data.at(-1);
             const previous = s.data.at(-2);
@@ -1223,7 +1179,7 @@ const WS_URL = import.meta.env.VITE_WS_URL || "ws://127.0.0.1:8000";
                   </div>
                   <div className="text-right">
                     <div className="text-2xl font-bold text-gray-900">
-                      {latest && latest.y !== undefined ? latest.y.toFixed(1) : '-'}
+                      {latest ? latest.y.toFixed(1) : '-'}
                     </div>
                     <div className={`text-sm font-medium ${
                       change >= 0 ? 'text-green-600' : 'text-red-600'
@@ -1332,9 +1288,7 @@ const WS_URL = import.meta.env.VITE_WS_URL || "ws://127.0.0.1:8000";
                 <div className="flex items-center gap-4">
                   <div className="text-sm text-gray-600">
                     <span className="font-medium">ค่าล่าสุด:</span> 
-                    {modalSeries.data.length > 0 && modalSeries.data[modalSeries.data.length - 1]?.y !== undefined 
-                      ? modalSeries.data[modalSeries.data.length - 1].y.toFixed(2) 
-                      : "0.00"} {modalSeries.unit}
+                    {modalSeries.data.length > 0 ? modalSeries.data[modalSeries.data.length - 1].y.toFixed(2) : "0.00"} {modalSeries.unit}
                   </div>
                   <div className="text-sm text-gray-600">
                     <span className="font-medium">สถานะ:</span> 

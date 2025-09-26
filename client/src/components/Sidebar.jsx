@@ -1,6 +1,7 @@
 // src/components/Sidebar.jsx
 import { NavLink } from "react-router-dom";
 import { useState, useEffect } from "react";
+import { useAuth } from "../contexts/AuthContext";
 
 // Icon Components
 const HomeIcon = () => (
@@ -62,6 +63,7 @@ function Item({ to, icon, label, collapsed }) {
 }
 
 export default function Sidebar({ collapsed = false, onToggle }) {
+  const { user } = useAuth();
   const [currentTime, setCurrentTime] = useState(new Date());
 
   // Update time every second
@@ -113,16 +115,25 @@ export default function Sidebar({ collapsed = false, onToggle }) {
         </div>
         <nav className="space-y-1">
           <Item to="/" icon={<HomeIcon />} label="HOME" collapsed={collapsed} />
-          <Item to="/status" icon={<StatusIcon />} label="STATUS" collapsed={collapsed} />
-          <Item to="/logs" icon={<DataLogsIcon />} label="DATA LOGS" collapsed={collapsed} />
           <Item to="/graph" icon={<GraphIcon />} label="GRAPH" collapsed={collapsed} />
-          <Item
-            to="/blowback"
-            icon={<BlowbackIcon />}
-            label="BLOWBACK"
-            collapsed={collapsed}
-          />
-          <Item to="/config" icon={<ConfigIcon />} label="CONFIG" collapsed={collapsed} />
+          <Item to="/logs" icon={<DataLogsIcon />} label="DATA LOGS" collapsed={collapsed} />
+          
+          {/* Admin only navigation items */}
+          {user?.permissions?.canAccessStatus && (
+            <>
+              <Item to="/status" icon={<StatusIcon />} label="STATUS" collapsed={collapsed} />
+              <Item
+                to="/blowback"
+                icon={<BlowbackIcon />}
+                label="BLOWBACK"
+                collapsed={collapsed}
+              />
+            </>
+          )}
+          
+          {user?.permissions?.canAccessConfig && (
+            <Item to="/config" icon={<ConfigIcon />} label="CONFIG" collapsed={collapsed} />
+          )}
         </nav>
       </div>
       <div
@@ -137,8 +148,13 @@ export default function Sidebar({ collapsed = false, onToggle }) {
         >
           {collapsed ? ">" : "<"}
         </button>
-        <div className="mt-2 text-center text-xs opacity-60">
-          {collapsed ? "v1" : "v1.0.0"}
+        
+        {/* User info and logout */}
+        <div className="mt-2 space-y-2">
+          <div className="text-center text-xs opacity-60">
+            {collapsed ? "v1" : "v1.0.0"}
+          </div>
+          
         </div>
       </div>
     </div>

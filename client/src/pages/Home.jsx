@@ -65,6 +65,7 @@ export default function Home() {
     const [isConnected, setIsConnected] = useState(false);
     const [isConnecting, setIsConnecting] = useState(false);
     const [loading, setLoading] = useState(false);
+    const [lastUpdate, setLastUpdate] = useState(null);
     const websocketRef = useRef(null);
 
 const API = import.meta.env.VITE_BACKEND_URL || "http://127.0.0.1:8000";
@@ -140,6 +141,7 @@ const WS_URL = import.meta.env.VITE_WS_URL || "ws://127.0.0.1:8000";
                         
                         setValues(newValues);
                         setIsConnected(true);
+                        setLastUpdate(new Date());
                     }
                 } catch (error) {
                     console.error("Error parsing WebSocket message:", error);
@@ -228,6 +230,14 @@ const WS_URL = import.meta.env.VITE_WS_URL || "ws://127.0.0.1:8000";
                                 {isConnected ? 'Connected' : 'Disconnected - Please configure devices in Config page'}
                             </span>
                         </div>
+                        {lastUpdate && (
+                            <div className="text-xs text-gray-500 mt-1">
+                                Last update: {lastUpdate.toLocaleTimeString('th-TH', { 
+                                    hour12: false,
+                                    hour: '2-digit'
+                                })}:00
+                            </div>
+                        )}
                     </div>
                 </div>
 

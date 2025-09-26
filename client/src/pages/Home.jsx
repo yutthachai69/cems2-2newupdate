@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { HomePageSkeleton } from "../components/SkeletonLoader";
 
 function MetricCard({ title, value = 0, unit, status = "normal", icon, warningThreshold, dangerThreshold }) {
   // กำหนดสถานะตามค่า
@@ -81,57 +82,7 @@ export default function Home() {
 const API = import.meta.env.VITE_BACKEND_URL || "http://127.0.0.1:8000";
 const WS_URL = import.meta.env.VITE_WS_URL || "ws://127.0.0.1:8000";
 
-    // HTTP fallback for testing
-    const refreshData = async () => {
-        setLoading(true);
-        try {
-            const response = await fetch(`${API}/api/data/realtime/${selectedStack}`);
-            const result = await response.json();
-            
-            if (result.success && result.data && result.data[0]) {
-                const stackData = result.data[0];
-                const data = stackData.data;
-                const correctedData = stackData.corrected_data;
-                
-                console.log("DEBUG HTTP - Raw data:", data);
-                console.log("DEBUG HTTP - Corrected data:", correctedData);
-                
-                const newValues = {
-                    SO2: data.SO2 || 0,
-                    NOx: data.NOx || 0,
-                    O2: data.O2 || 0,
-                    CO: data.CO || 0,
-                    Dust: data.Dust || 0,
-                    Temperature: data.Temperature || 0,
-                    Velocity: data.Velocity || 0,
-                    Pressure: data.Pressure || 0,
-                    SO2Corr: correctedData ? correctedData.SO2 : 0,
-                    NOxCorr: correctedData ? correctedData.NOx : 0,
-                    COCorr: correctedData ? correctedData.CO : 0,
-                    DustCorr: correctedData ? correctedData.Dust : 0,
-                    Flowrate: data.Flowrate || 0,
-                };
-                
-                console.log("DEBUG HTTP - Setting new values:", newValues);
-                setValues(newValues);
-                
-                // ตรวจสอบสถานะการเชื่อมต่อ
-                const status = stackData.status || "unknown";
-                if (status === "no devices configured") {
-                    setIsConnected(false);
-                } else {
-                    setIsConnected(true);
-                }
-            } else {
-                setIsConnected(false);
-            }
-        } catch (error) {
-            console.error("Failed to fetch data:", error);
-            setIsConnected(false);
-        } finally {
-            setLoading(false);
-        }
-    };
+    // ใช้ WebSocket เท่านั้น - ไม่มี HTTP fallback
 
     // WebSocket connection for real-time data - แก้ไขโครงสร้างให้ถูกต้อง
     useEffect(() => {
@@ -257,6 +208,11 @@ const WS_URL = import.meta.env.VITE_WS_URL || "ws://127.0.0.1:8000";
         };
     }, [selectedStack]);
 
+    // แสดง skeleton loading ถ้ากำลังโหลดและไม่มีข้อมูล
+    if (loading && !isConnected) {
+        return <HomePageSkeleton />;
+    }
+
     return (
         <div className="min-h-screen bg-white p-6">
             <div className="max-w-7xl mx-auto space-y-6">
@@ -276,13 +232,7 @@ const WS_URL = import.meta.env.VITE_WS_URL || "ws://127.0.0.1:8000";
                         <div className="border border-gray-300 rounded px-3 py-2 text-sm bg-white">
                             Stack 1
                         </div>
-                        <button 
-                            className="bg-yellow-200 hover:bg-yellow-300 text-gray-800 px-4 py-2 rounded-lg text-sm font-medium transition-colors"
-                            onClick={refreshData}
-                            disabled={loading}
-                        >
-                            {loading ? "Loading..." : "Refresh"}
-                        </button>
+                        {/* ใช้ WebSocket เท่านั้น - ไม่มีปุ่ม Refresh */}
                         <div className="flex items-center gap-2">
                             <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`}></div>
                             <span className="text-sm text-gray-600">

@@ -434,23 +434,24 @@ async def status_websocket(websocket: WebSocket):
         # ส่งข้อมูลสถานะเริ่มต้น
         try:
             status_data = status_service.get_status()
+            # แปลง StatusResponse เป็น dict
+            status_dict = status_data.dict() if hasattr(status_data, 'dict') else status_data
+            
+            def convert_datetime(obj):
+                if isinstance(obj, dict):
+                    return {k: convert_datetime(v) for k, v in obj.items()}
+                elif isinstance(obj, list):
+                    return [convert_datetime(item) for item in obj]
+                elif hasattr(obj, 'isoformat'):
+                    return obj.isoformat()
+                else:
+                    return obj
+            
             message = {
                 "type": "status",
-                "data": status_data,
+                "data": convert_datetime(status_dict),
                 "timestamp": datetime.now().isoformat()
             }
-            # Convert any datetime objects to ISO format strings
-            if isinstance(status_data, dict):
-                def convert_datetime(obj):
-                    if isinstance(obj, dict):
-                        return {k: convert_datetime(v) for k, v in obj.items()}
-                    elif isinstance(obj, list):
-                        return [convert_datetime(item) for item in obj]
-                    elif hasattr(obj, 'isoformat'):
-                        return obj.isoformat()
-                    else:
-                        return obj
-                message["data"] = convert_datetime(status_data)
             await websocket.send_text(json.dumps(message))
             print("Initial status sent")
         except Exception as e:
@@ -462,23 +463,24 @@ async def status_websocket(websocket: WebSocket):
             while True:
                 try:
                     status_data = status_service.get_status()
+                    # แปลง StatusResponse เป็น dict
+                    status_dict = status_data.dict() if hasattr(status_data, 'dict') else status_data
+                    
+                    def convert_datetime(obj):
+                        if isinstance(obj, dict):
+                            return {k: convert_datetime(v) for k, v in obj.items()}
+                        elif isinstance(obj, list):
+                            return [convert_datetime(item) for item in obj]
+                        elif hasattr(obj, 'isoformat'):
+                            return obj.isoformat()
+                        else:
+                            return obj
+                    
                     message = {
                         "type": "status",
-                        "data": status_data,
+                        "data": convert_datetime(status_dict),
                         "timestamp": datetime.now().isoformat()
                     }
-                    # Convert any datetime objects to ISO format strings
-                    if isinstance(status_data, dict):
-                        def convert_datetime(obj):
-                            if isinstance(obj, dict):
-                                return {k: convert_datetime(v) for k, v in obj.items()}
-                            elif isinstance(obj, list):
-                                return [convert_datetime(item) for item in obj]
-                            elif hasattr(obj, 'isoformat'):
-                                return obj.isoformat()
-                            else:
-                                return obj
-                        message["data"] = convert_datetime(status_data)
                     await websocket.send_text(json.dumps(message))
                     print("Periodic status sent")
                     await asyncio.sleep(5)  # ส่งทุก 5 วินาที

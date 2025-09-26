@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { BlowbackPageSkeleton } from "../components/SkeletonLoader";
 
 const API = import.meta.env.VITE_BACKEND_URL || "http://127.0.0.1:8000";
 
@@ -92,6 +93,11 @@ export default function Blowback() {
       setLoading(false);
     }
   };
+
+  // แสดง skeleton loading ถ้ากำลังโหลด
+  if (loading) {
+    return <BlowbackPageSkeleton />;
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 p-6">

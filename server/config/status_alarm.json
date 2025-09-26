@@ -30,5 +30,29 @@
     "device": "test2",
     "enabled": true,
     "id": 4
+  },
+  {
+    "name": "Maintenance Mode",
+    "type": "status",
+    "address": 4,
+    "device": "test2",
+    "enabled": true,
+    "id": 5
+  },
+  {
+    "name": "Calibration Through Probe",
+    "type": "status",
+    "address": 5,
+    "device": "test2",
+    "enabled": true,
+    "id": 6
+  },
+  {
+    "name": "Manual Blowback Button",
+    "type": "status",
+    "address": 6,
+    "device": "test2",
+    "enabled": true,
+    "id": 7
   }
 ]

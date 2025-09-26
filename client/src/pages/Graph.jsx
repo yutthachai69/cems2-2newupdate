@@ -1,5 +1,6 @@
 // src/pages/Graph.jsx
 import { useEffect, useRef, useState, useCallback } from "react";
+import { GraphPageSkeleton } from "../components/SkeletonLoader";
 
 // ---- Canvas helpers: roundRect fallback ----
 function drawRoundRect(ctx, x, y, w, h, r = 6) {
@@ -300,6 +301,21 @@ function drawRealtimeChart(
     ctx.fillText(s.name, pad.l + 8 + i * 110, height - 14);
   });
 }
+
+// Function to convert timeRange string to milliseconds
+const getTimeRangeMs = (timeRange) => {
+  const now = Date.now();
+  switch (timeRange) {
+    case "1h": return 60 * 60 * 1000;        // 1 ชั่วโมง
+    case "6h": return 6 * 60 * 60 * 1000;    // 6 ชั่วโมง  
+    case "1d": return 24 * 60 * 60 * 1000;   // 1 วัน
+    case "5d": return 5 * 24 * 60 * 60 * 1000; // 5 วัน
+    case "1m": return 30 * 24 * 60 * 60 * 1000; // 1 เดือน (30 วัน)
+    case "6m": return 6 * 30 * 24 * 60 * 60 * 1000; // 6 เดือน (180 วัน)
+    case "1y": return 365 * 24 * 60 * 60 * 1000; // 1 ปี (365 วัน)
+    default: return 24 * 60 * 60 * 1000; // default 1 วัน
+  }
+};
 
 export default function Graph() {
   const canvasRefs = useRef({});
@@ -611,68 +627,60 @@ const WS_URL = import.meta.env.VITE_WS_URL || "ws://127.0.0.1:8000";
           return;
         }
       } else {
-        // โหมด Historical: ดึงข้อมูลจาก SQLite
-        let startDate = null;
+        // โหมด Historical: ดึงข้อมูลจาก InfluxDB ตาม timeRange
+        console.log(`Historical mode - fetching data for ${timeRange}`);
         
-        switch(timeRange) {
-          case "1h":
-            // ใช้ข้อมูลล่าสุด 1 ชั่วโมงจากข้อมูลที่มีจริง
-            startDate = new Date(Date.now() - 24 * 60 * 60 * 1000); // ใช้ข้อมูล 24 ชั่วโมงล่าสุด
-            break;
-          case "6h":
-            // ใช้ข้อมูลล่าสุด 6 ชั่วโมงจากข้อมูลที่มีจริง
-            startDate = new Date(Date.now() - 24 * 60 * 60 * 1000); // ใช้ข้อมูล 24 ชั่วโมงล่าสุด
-            break;
-          case "1d":
-            // ใช้ข้อมูลล่าสุด 1 วันจากข้อมูลที่มีจริง
-            startDate = new Date(Date.now() - 24 * 60 * 60 * 1000); // ใช้ข้อมูล 24 ชั่วโมงล่าสุด
-            break;
-          case "5d":
-            // ใช้ข้อมูลทั้งหมดที่มี (ประมาณ 1 วัน)
-            startDate = new Date(Date.now() - 24 * 60 * 60 * 1000); // ใช้ข้อมูล 24 ชั่วโมงล่าสุด
-            break;
-          case "1m":
-            // ใช้ข้อมูลทั้งหมดที่มี (ประมาณ 1 วัน)
-            startDate = new Date(Date.now() - 24 * 60 * 60 * 1000); // ใช้ข้อมูล 24 ชั่วโมงล่าสุด
-            break;
-          case "6m":
-            // ใช้ข้อมูลทั้งหมดที่มี (ประมาณ 1 วัน)
-            startDate = new Date(Date.now() - 24 * 60 * 60 * 1000); // ใช้ข้อมูล 24 ชั่วโมงล่าสุด
-            break;
-          case "1y":
-            // ใช้ข้อมูลทั้งหมดที่มี (ประมาณ 1 วัน)
-            startDate = new Date(Date.now() - 24 * 60 * 60 * 1000); // ใช้ข้อมูล 24 ชั่วโมงล่าสุด
-            break;
-          default:
-            startDate = null;
+        const timeRangeMs = getTimeRangeMs(timeRange);
+        // แก้ไข timestamp year mismatch - ใช้ปี 2025 ให้ตรงกับ InfluxDB
+        const now = new Date();
+        const currentYear = 2025; // ตรงกับข้อมูลใน InfluxDB
+        const startTime = new Date(currentYear, now.getMonth(), now.getDate(), now.getHours(), now.getMinutes(), now.getSeconds());
+        startTime.setTime(startTime.getTime() - timeRangeMs);
+        const endTime = new Date(currentYear, now.getMonth(), now.getDate(), now.getHours(), now.getMinutes(), now.getSeconds());
+        
+        console.log(`Fetching historical data from ${startTime.toISOString()} to ${endTime.toISOString()}`);
+        
+        const response = await fetch(`${API}/api/data/range?stack_id=${selectedStack}&start_time=${startTime.toISOString()}&end_time=${endTime.toISOString()}&limit=10000`);
+        const result = await response.json();
+        
+        if (result.success && result.data && Array.isArray(result.data) && result.data.length > 0) {
+          console.log(`Received ${result.data.length} historical data points`);
+          
+          // แปลงข้อมูล historical เป็นรูปแบบกราฟ
+          const historicalData = result.data.map(item => ({
+            timestamp: new Date(item.timestamp).getTime(),
+            SO2: item.SO2 || 0,
+            NOx: item.NOx || 0,
+            O2: item.O2 || 0,
+            CO: item.CO || 0,
+            Dust: item.Dust || 0,
+            Temperature: item.Temperature || 0,
+            Velocity: item.Velocity || 0,
+            Flowrate: item.Flowrate || 0,
+            Pressure: item.Pressure || 0
+          }));
+          
+          // อัปเดต series data
+          setSeries(prevSeries => prevSeries.map(s => {
+            const seriesData = historicalData.map(item => ({
+              t: item.timestamp,
+              y: item[s.name] || 0
+            }));
+            return { ...s, data: seriesData };
+          }));
+          
+          setIsConnected(true);
+          setLastUpdate(new Date());
+          console.log("Historical data loaded successfully");
+        } else {
+          console.warn("No historical data found or API error:", result);
+          setIsConnected(false);
         }
-        
-        // กำหนด endDate เป็นเวลาปัจจุบัน หรือใช้ข้อมูลล่าสุดที่มีใน DB
-        const endDate = new Date();
-        
-        let url = `${API}/api/data/range?limit=50000&stack_id=${selectedStack}`; // เพิ่ม stack_id parameter
-        if (startDate) {
-          url += `&start_time=${startDate.toISOString()}`;
-        }
-        url += `&end_time=${endDate.toISOString()}`;
-        
-        response = await fetch(url);
-        result = await response.json();
-        
-        console.log(`Historical API call: ${url}`);
-        console.log(`Historical response:`, result);
-        
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-        }
-        
-        if (!result.success) {
-          throw new Error(`API Error: ${result.message || 'Unknown error'}`);
-        }
-        
+        return;
       }
       
-      if (result.success && result.data && Array.isArray(result.data) && result.data.length > 0) {
+      // ใช้ WebSocket เท่านั้น - ไม่มี HTTP fallback
+      if (false) { // ปิดการใช้งาน HTTP
         // แปลงข้อมูลจาก SQLite เป็นรูปแบบกราฟ
         let graphData = result.data.map(item => ({
           timestamp: new Date(item.timestamp).getTime(), // ใช้เวลาจาก backend
@@ -912,7 +920,7 @@ const WS_URL = import.meta.env.VITE_WS_URL || "ws://127.0.0.1:8000";
   useEffect(() => {
     if (timeRange === "realtime" || !running) return;
     
-    const interval = 10000; // อัปเดตทุก 10 วินาทีสำหรับ historical
+    const interval = 30000; // อัปเดตทุก 30 วินาทีสำหรับ historical
     const id = setInterval(fetchData, interval);
     return () => clearInterval(id);
   }, [running, selectedStack, timeRange, fetchData]);
@@ -1005,6 +1013,11 @@ const WS_URL = import.meta.env.VITE_WS_URL || "ws://127.0.0.1:8000";
       windowEnd: we
     });
   }, [modalOpen, modalSeries, timeRange, liveWindowMs]);
+
+  // แสดง skeleton loading ถ้ากำลังโหลดและไม่มีข้อมูล
+  if (!isConnected && series.length === 0) {
+    return <GraphPageSkeleton />;
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 p-6">

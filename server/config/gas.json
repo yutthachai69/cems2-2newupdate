@@ -1,23 +1,52 @@
 [
   {
-    "parameter": "SO2",
+    "id": 1,
+    "key": "SO2",
+    "display": "SO₂",
     "unit": "ppm",
-    "warningThreshold": 50.0,
-    "dangerThreshold": 100.0,
-    "enabled": true
+    "enabled": true,
+    "min": 0,
+    "max": 200,
+    "alarm": 150
   },
   {
-    "parameter": "NOx",
+    "id": 2,
+    "key": "NOx",
+    "display": "NOx",
     "unit": "ppm",
-    "warningThreshold": 100.0,
-    "dangerThreshold": 200.0,
-    "enabled": true
+    "enabled": true,
+    "min": 0,
+    "max": 500,
+    "alarm": 300
   },
   {
-    "parameter": "O2",
+    "id": 3,
+    "key": "O2",
+    "display": "O₂",
     "unit": "%",
-    "warningThreshold": 15.0,
-    "dangerThreshold": 20.0,
-    "enabled": true
+    "enabled": true,
+    "min": 0,
+    "max": 25,
+    "alarm": 20
+  },
+  {
+    "id": 4,
+    "key": "CO",
+    "display": "CO",
+    "unit": "ppm",
+    "enabled": true,
+    "min": 0,
+    "max": 100,
+    "alarm": 50
+  },
+  {
+    "id": 5,
+    "key": "Dust",
+    "display": "ฝุ่นละออง",
+    "unit": "mg/m³",
+    "enabled": true,
+    "min": 0,
+    "max": 100,
+    "alarm": 50
   }
 ]

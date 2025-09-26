@@ -1,6 +1,7 @@
 // src/pages/Config.jsx
 import React, { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { Link } from "react-router-dom";
+import { ConfigPageSkeleton } from "../components/SkeletonLoader";
 const API = import.meta.env.VITE_BACKEND_URL || "http://127.0.0.1:8000";
 
 // ข้อมูลสำหรับ Status/Alarm dropdown
@@ -206,12 +207,26 @@ export default function Config() {
 
   /* Load config on mount */
   useEffect(() => {
+    console.log("DEBUG: Config useEffect triggered");
     try {
-    reloadConfig();
+      reloadConfig();
     } catch (err) {
       console.error("Error in useEffect:", err);
     }
   }, []);
+
+  /* Debug state changes */
+  useEffect(() => {
+    console.log("DEBUG: devices state changed:", devices);
+  }, [devices]);
+
+  useEffect(() => {
+    console.log("DEBUG: mapping state changed:", mapping);
+  }, [mapping]);
+
+  useEffect(() => {
+    console.log("DEBUG: loading state changed:", loading);
+  }, [loading]);
 
 
   /* Save selectedDevice to localStorage when it changes */
@@ -306,7 +321,7 @@ export default function Config() {
       setDeleteConfirm({
         type: 'mapping',
         item: row,
-        message: `ต้องการลบ mapping "${mappingLabel}" หรือไม่?`
+        message: `คุณแน่ใจไหมว่าจะลบ mapping "${mappingLabel}" นี้`
       });
     } else if (activeTab === 'gas') {
       const gasLabel = row.display || row.key || row.name || '';
@@ -521,27 +536,56 @@ export default function Config() {
     setLoading(true);
     try {
       // ใช้ Promise.allSettled แทน Promise.all เพื่อไม่ให้ล้มเหลวทั้งหมดถ้า API บางตัวล้มเหลว
+      // เพิ่ม timeout สำหรับแต่ละ fetch
+      const fetchWithTimeout = (url, timeout = 5000) => {
+        console.log(`DEBUG: Fetching ${url} with timeout ${timeout}ms`);
+        const fetchPromise = fetch(url);
+        const timeoutPromise = new Promise((_, reject) => {
+          setTimeout(() => reject(new Error('Request timeout')), timeout);
+        });
+        return Promise.race([fetchPromise, timeoutPromise]);
+      };
+
       const [devicesRes, mappingRes, gasRes, systemRes, stackRes, thresholdsRes, statusAlarmRes] = await Promise.allSettled([
-        fetch(`${API}/api/config/devices`).then(r => r.json()),
-        fetch(`${API}/api/config/mappings`).then(r => r.json()),
-        fetch(`${API}/api/config/gas`).then(r => r.json()),
-        fetch(`${API}/api/config/system`).then(r => r.json()),
-        fetch(`${API}/api/config/stacks`).then(r => r.json()),
-        fetch(`${API}/api/config/thresholds`).then(r => r.json()),
-        fetch(`${API}/api/config/status-alarm`).then(r => r.json())
+        fetchWithTimeout(`${API}/api/config/devices`).then(r => r.json()),
+        fetchWithTimeout(`${API}/api/config/mappings`).then(r => r.json()),
+        fetchWithTimeout(`${API}/api/config/gas`).then(r => r.json()),
+        fetchWithTimeout(`${API}/api/config/system`).then(r => r.json()),
+        fetchWithTimeout(`${API}/api/config/stacks`).then(r => r.json()),
+        fetchWithTimeout(`${API}/api/config/thresholds`).then(r => r.json()),
+        fetchWithTimeout(`${API}/api/config/status-alarm`).then(r => r.json())
       ]);
 
       // ตรวจสอบแต่ละ response แยกกัน
+      console.log("DEBUG Config reload - devicesRes:", devicesRes);
+      console.log("DEBUG Config reload - mappingRes:", mappingRes);
+      
       if (devicesRes.status === 'fulfilled' && devicesRes.value?.devices) {
+        console.log("DEBUG: Setting devices:", devicesRes.value.devices);
         setDevices(devicesRes.value.devices);
       } else {
         console.warn("Failed to load devices:", devicesRes.reason);
+        // Fallback: ใช้ข้อมูลจาก localStorage หรือข้อมูลเริ่มต้น
+        const fallbackDevices = [
+          { name: "test1", mode: "TCP", host: "127.0.0.1", port: 502, unit: 1, id: 1 },
+          { name: "test2", mode: "TCP", host: "127.0.0.1", port: 503, unit: 1, id: 2 }
+        ];
+        setDevices(fallbackDevices);
       }
 
       if (mappingRes.status === 'fulfilled' && mappingRes.value?.mappings) {
+        console.log("DEBUG: Setting mappings:", mappingRes.value.mappings);
         setMapping(mappingRes.value.mappings);
       } else {
         console.warn("Failed to load mappings:", mappingRes.reason);
+        // Fallback: ใช้ข้อมูลจาก localStorage หรือข้อมูลเริ่มต้น
+        const fallbackMappings = [
+          { id: 1, name: "SO2", unit: "ppm", address: 0, dataType: "float32", format: "AB CD", count: 2, device: "test1" },
+          { id: 2, name: "NOx", unit: "ppm", address: 2, dataType: "float32", format: "AB CD", count: 2, device: "test1" },
+          { id: 3, name: "O2", unit: "%", address: 4, dataType: "float32", format: "AB CD", count: 2, device: "test1" },
+          { id: 4, name: "CO", unit: "ppm", address: 6, dataType: "float32", format: "AB CD", count: 2, device: "test1" }
+        ];
+        setMapping(fallbackMappings);
       }
 
       if (gasRes.status === 'fulfilled' && gasRes.value?.gas_settings) {
@@ -976,16 +1020,26 @@ export default function Config() {
   /* Gas columns */
   const cGas = useMemo(() => ({
     cols: [
-      { key: "key", title: "Key", dataIndex: "key", render: (r) => <Text value={r.key || ""} onChange={(e) => setGases(gases.map(g => g.id === r.id ? { ...g, key: e.target.value } : g))} className="w-24" /> },
-      { key: "display", title: "Display", dataIndex: "display", render: (r) => <Text value={r.display || ""} onChange={(e) => setGases(gases.map(g => g.id === r.id ? { ...g, display: e.target.value } : g))} /> },
+      { key: "enabled", title: "Enable", dataIndex: "enabled", render: (r) => <Switch checked={!!r.enabled} onChange={(v) => setGases(gases.map(g => g.id === r.id ? { ...g, enabled: v } : g))} /> },
+      { key: "display", title: "ชื่อแก๊ส", dataIndex: "display", render: (r) => <Text value={r.display || ""} onChange={(e) => setGases(gases.map(g => g.id === r.id ? { ...g, display: e.target.value } : g))} /> },
       { key: "unit", title: "Unit", dataIndex: "unit", render: (r) => <Text value={r.unit || ""} onChange={(e) => setGases(gases.map(g => g.id === r.id ? { ...g, unit: e.target.value } : g))} className="w-20" /> },
-      { key: "enabled", title: "Enabled", dataIndex: "enabled", render: (r) => <Switch checked={!!r.enabled} onChange={(v) => setGases(gases.map(g => g.id === r.id ? { ...g, enabled: v } : g))} /> },
-      { key: "min", title: "Min", dataIndex: "min", render: (r) => <NumberField value={r.min ?? 0} onChange={(e) => setGases(gases.map(g => g.id === r.id ? { ...g, min: Number(e.target.value) || 0 } : g))} className="w-20" /> },
-      { key: "max", title: "Max", dataIndex: "max", render: (r) => <NumberField value={r.max ?? 100} onChange={(e) => setGases(gases.map(g => g.id === r.id ? { ...g, max: Number(e.target.value) || 100 } : g))} className="w-20" /> },
-      { key: "alarm", title: "Alarm", dataIndex: "alarm", render: (r) => <NumberField value={r.alarm ?? 80} onChange={(e) => setGases(gases.map(g => g.id === r.id ? { ...g, alarm: Number(e.target.value) || 80 } : g))} className="w-20" /> }
+      { key: "alarm", title: "Warning/Alarm", dataIndex: "alarm", render: (r) => <NumberField value={r.alarm ?? 80} onChange={(e) => setGases(gases.map(g => g.id === r.id ? { ...g, alarm: Number(e.target.value) || 80 } : g))} className="w-24" /> },
+      { key: "actions", title: "Action", dataIndex: "actions", render: (r) => (
+        <button 
+          className="px-2 py-1 bg-red-500 hover:bg-red-600 text-white text-xs rounded"
+          onClick={() => handleDelete(r)}
+        >
+          Delete
+        </button>
+      )}
     ],
     add: () => setGases([...gases, { id: Date.now(), key: "", display: "", unit: "", enabled: true, min: 0, max: 100, alarm: 80 }])
   }), [gases]);
+
+  // แสดง skeleton loading ถ้ากำลังโหลดและไม่มีข้อมูล
+  if (loading && devices.length === 0 && mapping.length === 0) {
+    return <ConfigPageSkeleton />;
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 p-6">

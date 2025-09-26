@@ -74,6 +74,7 @@ function Pill({ label, on, type = "status", category = "default", error = null }
 
 
 import { useState, useEffect, useRef } from "react";
+import { StatusPageSkeleton } from "../components/SkeletonLoader";
 
 const API = import.meta.env.VITE_BACKEND_URL || "http://127.0.0.1:8000";
 const WS_URL = import.meta.env.VITE_WS_URL || "ws://127.0.0.1:8000";
@@ -91,52 +92,7 @@ export default function Status() {
     const [isConnected, setIsConnected] = useState(false);
     const websocketRef = useRef(null);
 
-    // ดึงข้อมูลจาก backend
-    const fetchStatusData = async (retryCount = 0) => {
-      try {
-        setLoading(true);
-        // เพิ่ม timeout เพื่อป้องกันการโหลดนานเกินไป
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 5000); // ลดเป็น 5 วินาที
-        
-        const response = await fetch(`${API}/api/status`, {
-          signal: controller.signal,
-          headers: {
-            'Content-Type': 'application/json',
-          }
-        });
-        clearTimeout(timeoutId);
-        
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        
-        const result = await response.json();
-        
-        if (result) {
-          setStatusData(result);
-          setLastUpdate(new Date());
-          setIsConnected(true);
-        }
-      } catch (error) {
-        console.error("Failed to fetch status data:", error);
-        
-        // Retry mechanism - ลองใหม่สูงสุด 3 ครั้ง
-        if (retryCount < 3 && (error.name === 'AbortError' || error.message.includes('Failed to fetch'))) {
-          console.log(`Retrying... (${retryCount + 1}/3)`);
-          setTimeout(() => {
-            fetchStatusData(retryCount + 1);
-          }, 2000); // รอ 2 วินาทีก่อนลองใหม่
-          return;
-        }
-        
-        // ไม่ใช้ mock data แล้ว - ให้ backend ส่งข้อมูลการ์ดทั้งหมดมา
-        console.log("API failed, but backend should provide all cards by default");
-        setIsConnected(false);
-      } finally {
-        setLoading(false);
-      }
-    };
+    // ใช้ WebSocket เท่านั้น - ไม่มี HTTP fallback
 
     // WebSocket connection for real-time status data - ใช้วิธีง่ายๆ
     useEffect(() => {
@@ -153,6 +109,7 @@ export default function Status() {
             ws.onopen = () => {
                 console.log("Status WebSocket connected");
                 setIsConnected(true);
+                setLoading(false); // หยุด skeleton loading
             };
 
             ws.onmessage = (event) => {
@@ -164,6 +121,7 @@ export default function Status() {
                         setStatusData(message.data);
                         setLastUpdate(new Date());
                         setIsConnected(true);
+                        setLoading(false); // หยุด skeleton loading เมื่อได้รับข้อมูล
                     }
                 } catch (error) {
                     console.error("Error parsing status WebSocket message:", error);
@@ -173,6 +131,7 @@ export default function Status() {
             ws.onerror = (e) => {
                 console.warn("Status WebSocket error:", e);
                 setIsConnected(false);
+                setLoading(false); // หยุด skeleton loading เมื่อเกิด error
             };
 
             ws.onclose = () => {
@@ -183,10 +142,7 @@ export default function Status() {
             };
         };
 
-        // Initial fetch with HTTP
-        fetchStatusData();
-        
-        // Then connect WebSocket
+        // ใช้ WebSocket เท่านั้น
         connect();
 
         return () => {
@@ -210,8 +166,8 @@ export default function Status() {
         const result = await response.json();
         
         if (result.success) {
-          // รีเฟรชข้อมูลหลังจาก acknowledge
-          await fetchStatusData();
+          // WebSocket จะอัปเดตข้อมูลอัตโนมัติ
+          console.log("Alarm acknowledged successfully");
         } else {
           alert(`Failed to acknowledge alarm: ${result.message}`);
         }
@@ -239,6 +195,11 @@ export default function Status() {
       description: status.description,
       error: status.error
     })) : [];
+
+    // แสดง skeleton loading ถ้ากำลังโหลด
+    if (loading) {
+        return <StatusPageSkeleton />;
+    }
 
     return ( 
       <div className="min-h-screen bg-gray-50 p-6">

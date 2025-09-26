@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { DataLogsPageSkeleton } from "../components/SkeletonLoader";
 
 export default function DataLogs() {
   // -------- State (trimmed + consolidated) --------
@@ -8,6 +9,7 @@ export default function DataLogs() {
   const [preview, setPreview] = useState([]);
   const [totalRecords, setTotalRecords] = useState(0);
   const [lastUpdate, setLastUpdate] = useState(null);
+  const [isSearchResult, setIsSearchResult] = useState(false);
 
   // Search controls (compact)
   const [searchScope, setSearchScope] = useState("all"); // 'all' | 'field'
@@ -45,7 +47,14 @@ export default function DataLogs() {
   const fetchData = useCallback(async () => {
     try {
       setIsLoading(true);
-      const response = await fetch(`${API}/api/influxdb/data/aggregate/stack1?hours=24&interval=1m`);
+      
+      // ใช้ Promise.race แทน AbortController เพื่อหลีกเลี่ยง AbortError
+      const fetchPromise = fetch(`${API}/api/influxdb/data/aggregate/stack1?hours=6&interval=1m`);
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error('Request timeout')), 3000);
+      });
+      
+      const response = await Promise.race([fetchPromise, timeoutPromise]);
       const result = await response.json();
 
       const toLocalTs = (iso) => {
@@ -88,7 +97,10 @@ export default function DataLogs() {
         }));
         setPreview(formatted);
         setTotalRecords(result.count || formatted.length || 0);
-        setLastUpdate(new Date());
+        // ใช้เวลาจากข้อมูลจริง (ข้อมูลล่าสุด)
+        const latestTimestamp = formatted.length > 0 ? formatted[0].timestamp : null;
+        setLastUpdate(latestTimestamp ? new Date(latestTimestamp) : new Date());
+        setIsSearchResult(false); // ข้อมูล 6 ชม.ล่าสุด
       } else {
         // If no data, keep it simple: empty preview
         setPreview([]);
@@ -103,9 +115,12 @@ export default function DataLogs() {
 
   useEffect(() => {
     fetchData();
-    const id = setInterval(fetchData, 30000);
-    return () => clearInterval(id);
-  }, [fetchData]);
+    // ไม่ทำ polling เมื่ออยู่ในโหมดค้นหา
+    if (!isSearchResult) {
+      const id = setInterval(fetchData, 60000);
+      return () => clearInterval(id);
+    }
+  }, [fetchData, isSearchResult]);
 
   // --------- Backend search (compact API usage) ---------
   const searchInDatabase = useCallback(async () => {
@@ -150,7 +165,10 @@ export default function DataLogs() {
           }));
           setPreview(formatted);
           setTotalRecords(result.count || formatted.length || 0);
-          setLastUpdate(new Date());
+          // ใช้เวลาจากข้อมูลจริง (ข้อมูลล่าสุด)
+          const latestTimestamp = formatted.length > 0 ? formatted[0].timestamp : null;
+          setLastUpdate(latestTimestamp ? new Date(latestTimestamp) : new Date());
+          setIsSearchResult(false); // ข้อมูล 100 รายการล่าสุด
           showNotification(`แสดงข้อมูล ${formatted.length} รายการล่าสุด`, "success");
           return;
         }
@@ -218,7 +236,10 @@ export default function DataLogs() {
         }));
         setPreview(formatted);
         setTotalRecords(result.count || formatted.length || 0);
-        setLastUpdate(new Date());
+        // ใช้เวลาจากข้อมูลจริง (ข้อมูลล่าสุด)
+        const latestTimestamp = formatted.length > 0 ? formatted[0].timestamp : null;
+        setLastUpdate(latestTimestamp ? new Date(latestTimestamp) : new Date());
+        setIsSearchResult(true); // ผลการค้นหา
         
         // แสดงข้อความแจ้งเตือนผลการค้นหา
         if (searchScope === "all" && searchTerm) {
@@ -371,9 +392,15 @@ export default function DataLogs() {
     setSearchScope("all");
     setSearchField("SO2");
     setSearchTerm("");
+    setIsSearchResult(false); // รีเซ็ตเป็นข้อมูล 6 ชม.ล่าสุด
   };
 
   // -------- UI (compact) --------
+  // แสดง skeleton loading ถ้ากำลังโหลด
+  if (isLoading && preview.length === 0) {
+    return <DataLogsPageSkeleton />;
+  }
+
   return (
     <div className="min-h-screen bg-gray-50 p-6">
       <div className="max-w-7xl mx-auto space-y-6">
@@ -505,7 +532,9 @@ export default function DataLogs() {
               <span className="font-medium">บันทึกทั้งหมด:</span>
               <span className="font-semibold text-slate-800">{totalRecords}</span>
               {lastUpdate && (
-                <span className="ml-4">อัปเดตล่าสุด: {lastUpdate.toLocaleString("th-TH")}</span>
+                <span className="ml-4">
+                  {isSearchResult ? "อัปเดตข้อมูลที่ค้นหา" : "อัปเดต 6 ชม.ล่าสุด"}: {lastUpdate.toLocaleString("th-TH")}
+                </span>
               )}
             </div>
             <div className="flex flex-wrap gap-2">

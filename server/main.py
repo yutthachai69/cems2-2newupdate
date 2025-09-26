@@ -1,11 +1,13 @@
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
+from starlette.middleware.gzip import GZipMiddleware
 from typing import List, Optional
 from datetime import datetime
 import io
 import json
 import base64
+import os
 from reportlab.lib.pagesizes import letter, A4
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
@@ -31,7 +33,6 @@ from app.services.influxdb_service import InfluxDBService
 from app.routers import influxdb
 from app.routers import config_devices
 from app.routers import config_mappings
-from app.routers import config_gas
 from app.routers import config_system
 from app.routers import config_thresholds
 from app.routers import config_status_alarm
@@ -53,6 +54,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Add GZip middleware
+app.add_middleware(GZipMiddleware, minimum_size=1024)
+
 # WebSocket CORS is handled by the main CORS middleware
 
 # Initialize services
@@ -71,6 +75,36 @@ status_alarm_service = StatusAlarmService(config_service)
 import asyncio
 _bg_task = None
 
+# ---- Realtime (Modbus) cache + poller ----
+from datetime import timezone, timedelta
+_modbus_cache = {"data": None, "ts": None, "status": "init"}
+_modbus_task = None
+
+async def _modbus_poll_loop():
+    thailand_tz = timezone(timedelta(hours=7))
+    backoff = 1
+    while True:
+        try:
+            # จำกัดเวลา poll ไม่ให้ค้างนาน (เช่น 500ms)
+            data = await asyncio.wait_for(
+                asyncio.to_thread(modbus_data_service.get_data_from_devices),
+                timeout=0.5
+            )
+            now = datetime.now(thailand_tz)
+            _modbus_cache["data"] = data
+            _modbus_cache["ts"] = now
+            _modbus_cache["status"] = "ok"
+            backoff = 1  # reset เมื่อสำเร็จ
+        except Exception as e:
+            _modbus_cache["status"] = f"error: {e}"
+            # exponential backoff: 1s → 2s → 4s (สูงสุด 10s)
+            await asyncio.sleep(backoff)
+            backoff = min(backoff * 2, 10)
+            continue
+
+        # ความถี่ poll ปกติ (เช่น ทุก 1 วินาที)
+        await asyncio.sleep(1)
+
 async def _background_ingest_loop():
     """Fetch latest data and persist to InfluxDB every 60 seconds."""
     while True:
@@ -86,14 +120,17 @@ async def _background_ingest_loop():
 
 @app.on_event("startup")
 async def _start_background_task():
-    global _bg_task
+    global _bg_task, _modbus_task
     if _bg_task is None:
         _bg_task = asyncio.create_task(_background_ingest_loop())
         print("✅ Background ingest started (every 60s)")
+    if _modbus_task is None:
+        _modbus_task = asyncio.create_task(_modbus_poll_loop())
+        print("✅ Modbus poller started (every ~1s)")
 
 @app.on_event("shutdown")
 async def _stop_background_task():
-    global _bg_task
+    global _bg_task, _modbus_task
     if _bg_task:
         _bg_task.cancel()
         try:
@@ -102,12 +139,20 @@ async def _stop_background_task():
             pass
         _bg_task = None
         print("🛑 Background ingest stopped")
+    
+    if _modbus_task:
+        _modbus_task.cancel()
+        try:
+            await _modbus_task
+        except asyncio.CancelledError:
+            pass
+        _modbus_task = None
+        print("🛑 Modbus poller stopped")
 
 # Include routers
 app.include_router(influxdb.router)
 app.include_router(config_devices.router)
 app.include_router(config_mappings.router)
-app.include_router(config_gas.router)
 app.include_router(config_system.router)
 app.include_router(config_thresholds.router)
 app.include_router(config_status_alarm.router)
@@ -169,73 +214,42 @@ async def get_latest_data(stack_id: str):
 
 @app.get("/api/data/realtime/{stack_id}")
 async def get_realtime_data(stack_id: str):
-    """ดึงข้อมูลเรียลไทม์จาก Modbus โดยตรง (สำหรับ Home)"""
+    """ดึงข้อมูลเรียลไทม์จาก cache (ที่มี poller อัปเดตทุก ~1s)"""
+    from app.domain.data_model import DataPoint, StackData
+    thailand_tz = timezone(timedelta(hours=7))
+    now = datetime.now(thailand_tz)
+
+    raw = _modbus_cache.get("data") or {}
+    data = DataPoint(
+        timestamp=now,
+        SO2=raw.get("SO2", 0.0),
+        NOx=raw.get("NOx", 0.0),
+        O2=raw.get("O2", 0.0),
+        CO=raw.get("CO", 0.0),
+        Dust=raw.get("Dust", 0.0),
+        Temperature=raw.get("Temperature", 0.0),
+        Velocity=raw.get("Velocity", 0.0),
+        Flowrate=raw.get("Flowrate", 0.0),
+        Pressure=raw.get("Pressure", 0.0),
+    )
+
+    corrected_data = data_service._calculate_corrected_values(data)
+
+    stack_data = StackData(
+        stack_id=stack_id,
+        stack_name="Stack 1",
+        data=data,
+        corrected_data=corrected_data,
+        status=_modbus_cache.get("status", "unknown"),
+    )
+
+    # เขียนลง DB แบบ async-ไม่-block (โยนไป thread)
     try:
-        # ดึงข้อมูลจาก Modbus โดยตรง ไม่ผ่าน DB
-        modbus_data = modbus_data_service.get_data_from_devices()
-        
-        if modbus_data:
-            # แปลงเป็น StackData
-            from datetime import timezone, timedelta
-            thailand_tz = timezone(timedelta(hours=7))
-            current_time = datetime.now(thailand_tz)
-            
-            from app.domain.data_model import DataPoint, StackData
-            
-            data = DataPoint(
-                timestamp=current_time,
-                SO2=modbus_data.get("SO2", 0.0),
-                NOx=modbus_data.get("NOx", 0.0),
-                O2=modbus_data.get("O2", 0.0),
-                CO=modbus_data.get("CO", 0.0),
-                Dust=modbus_data.get("Dust", 0.0),
-                Temperature=modbus_data.get("Temperature", 0.0),
-                Velocity=modbus_data.get("Velocity", 0.0),
-                Flowrate=modbus_data.get("Flowrate", 0.0),
-                Pressure=modbus_data.get("Pressure", 0.0)
-            )
-            
-            # คำนวณค่าที่ปรับแก้แล้ว
-            corrected_data = data_service._calculate_corrected_values(data)
-            
-            stack_data = StackData(
-                stack_id=stack_id,
-                stack_name="Stack 1",
-                data=data,
-                corrected_data=corrected_data,
-                status="connected (modbus)"
-            )
-            
-            # บันทึกลง DB (แต่ไม่ส่งกลับ)
-            data_service.save_data_to_influxdb(stack_data)
-            
-            return DataResponse(success=True, data=[stack_data])
-        else:
-            # ไม่มีข้อมูลจาก Modbus
-            from datetime import timezone, timedelta
-            thailand_tz = timezone(timedelta(hours=7))
-            current_time = datetime.now(thailand_tz)
-            
-            from app.domain.data_model import DataPoint, StackData
-            
-            default_data = DataPoint(
-                timestamp=current_time,
-                SO2=0.0, NOx=0.0, O2=0.0, CO=0.0, Dust=0.0,
-                Temperature=0.0, Velocity=0.0, Flowrate=0.0, Pressure=0.0
-            )
-            
-            stack_data = StackData(
-                stack_id=stack_id,
-                stack_name="Stack 1",
-                data=default_data,
-                corrected_data=default_data,
-                status="no devices configured"
-            )
-            
-            return DataResponse(success=True, data=[stack_data])
-            
+        await asyncio.to_thread(data_service.save_data_to_influxdb, stack_data)
     except Exception as e:
-        return DataResponse(success=False, message=str(e))
+        print(f"save_data_to_influxdb error: {e}")
+
+    return DataResponse(success=True, data=[stack_data])
 
 @app.post("/api/data/toggle-modbus")
 async def toggle_modbus(enabled: bool):
@@ -279,14 +293,61 @@ async def add_devices(devices: List[DeviceConfig]):
     return {"success": success, "message": "Devices added successfully" if success else "Failed to add devices"}
 
 
+@app.get("/api/gas/list")
+async def get_gas_list():
+    """ดึงรายการแก๊สที่เปิดใช้งาน"""
+    try:
+        # ดึงข้อมูลจาก gas.json
+        gas_file = "config/gas.json"
+        if os.path.exists(gas_file):
+            with open(gas_file, "r", encoding="utf-8") as f:
+                gas_settings = json.load(f)
+        else:
+            gas_settings = []
+        
+        # กรองเฉพาะแก๊สที่ enabled = true
+        enabled_gases = [g for g in gas_settings if g.get('enabled', True)]
+        
+        return {
+            "success": True, 
+            "data": enabled_gases,
+            "count": len(enabled_gases)
+        }
+    except Exception as e:
+        return {
+            "success": False, 
+            "message": str(e),
+            "data": []
+        }
+
 @app.get("/api/config/gas")
-async def get_gas_settings():
-    return {"gas_settings": config_service.get_gas_settings()}
+async def get_gas_config():
+    """ดึงข้อมูล gas settings สำหรับหน้า Config"""
+    try:
+        # ดึงข้อมูลจาก gas.json
+        gas_file = "config/gas.json"
+        if os.path.exists(gas_file):
+            with open(gas_file, "r", encoding="utf-8") as f:
+                gas_settings = json.load(f)
+        else:
+            gas_settings = []
+        
+        return {"gas_settings": gas_settings}
+    except Exception as e:
+        return {"gas_settings": [], "error": str(e)}
 
 @app.put("/api/config/gas")
-async def update_gas_settings(gas: GasConfig):
-    success = config_service.update_gas_settings(gas)
-    return {"success": success, "message": "Gas settings updated successfully" if success else "Failed to update gas settings"}
+async def update_gas_settings(gas_list: List[dict]):
+    """บันทึกข้อมูล gas settings"""
+    try:
+        # บันทึกลง gas.json
+        gas_file = "config/gas.json"
+        with open(gas_file, "w", encoding="utf-8") as f:
+            json.dump(gas_list, f, indent=2, ensure_ascii=False)
+        
+        return {"success": True, "message": "Gas settings saved successfully"}
+    except Exception as e:
+        return {"success": False, "message": f"Failed to save gas settings: {str(e)}"}
 
 @app.get("/api/config/system")
 async def get_system_params():
@@ -349,29 +410,38 @@ async def data_websocket(websocket: WebSocket):
         # ส่งข้อมูลแบบ periodic ทุก 2 วินาที
         import asyncio
         async def send_periodic_data():
+            last_sent = None
             while connection_active:
                 try:
-                    stack_data = data_service.get_latest_data("stack1")
+                    # จำกัดเวลา query ไม่ให้ค้าง (เช่น 300ms)
+                    stack_data = await asyncio.wait_for(
+                        asyncio.to_thread(data_service.get_latest_data, "stack1"),
+                        timeout=0.3
+                    )
                     if stack_data:
-                        print(f"DEBUG: WebSocket sending stack_data: {stack_data}")
-                        message = {
-                            "type": "data",
-                            "data": [stack_data.dict()],
-                            "timestamp": datetime.now().isoformat()
-                        }
-                        # Convert datetime objects to ISO format strings
-                        if 'data' in message and message['data']:
-                            for item in message['data']:
+                        # (ถ้าอยากลดแชท noisy) ส่งเฉพาะเมื่อค่ามีการเปลี่ยนแปลงจริง
+                        if stack_data != last_sent:
+                            message = {
+                                "type": "data",
+                                "data": [stack_data.dict()],
+                                "timestamp": datetime.now().isoformat()
+                            }
+                            # normalize timestamp → ISO string เหมือนเดิม
+                            for item in message["data"]:
                                 if 'data' in item and 'timestamp' in item['data']:
                                     item['data']['timestamp'] = item['data']['timestamp'].isoformat()
                                 if 'corrected_data' in item and item['corrected_data'] and 'timestamp' in item['corrected_data']:
                                     item['corrected_data']['timestamp'] = item['corrected_data']['timestamp'].isoformat()
-                        await websocket.send_text(json.dumps(message))
-                        print("Periodic data sent")
-                    await asyncio.sleep(2)  # ส่งทุก 2 วินาที
+
+                            await websocket.send_text(json.dumps(message))
+                            last_sent = stack_data
+                except asyncio.TimeoutError:
+                    # ข้ามรอบถ้าช้าเกิน
+                    pass
                 except Exception as e:
                     print(f"Error sending periodic data: {e}")
                     break
+                await asyncio.sleep(2)
         
         # เริ่มส่งข้อมูลแบบ periodic
         periodic_task = asyncio.create_task(send_periodic_data())
@@ -429,6 +499,8 @@ async def data_websocket(websocket: WebSocket):
 async def status_websocket(websocket: WebSocket):
     await websocket.accept()
     print("WebSocket client connected to /ws/status")
+    
+    periodic_task = None  # <<<< เพิ่มบรรทัดนี้
     
     try:
         # ส่งข้อมูลสถานะเริ่มต้น
@@ -502,7 +574,12 @@ async def status_websocket(websocket: WebSocket):
     except Exception as e:
         print(f"Status WebSocket error: {e}")
     finally:
-        periodic_task.cancel()
+        if periodic_task:  # <<<< เช็กก่อน
+            periodic_task.cancel()
+            try:
+                await periodic_task
+            except asyncio.CancelledError:
+                pass
         print("Status WebSocket connection closed")
 
 # Status Routes

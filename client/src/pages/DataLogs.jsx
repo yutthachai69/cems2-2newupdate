@@ -1,7 +1,11 @@
 import { useState, useEffect, useCallback } from "react";
 import { DataLogsPageSkeleton } from "../components/SkeletonLoader";
+import { useGasSettings } from "../hooks/useGasSettings";
 
 export default function DataLogs() {
+  // -------- Gas Settings --------
+  const { gasSettings, loading: gasLoading } = useGasSettings();
+  
   // -------- State (trimmed + consolidated) --------
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
@@ -15,6 +19,16 @@ export default function DataLogs() {
   const [searchScope, setSearchScope] = useState("all"); // 'all' | 'field'
   const [searchField, setSearchField] = useState("SO2"); // used when scope==='field'
   const [searchTerm, setSearchTerm] = useState("");
+  
+  // อัปเดต searchField เมื่อ gas settings เปลี่ยน
+  useEffect(() => {
+    if (gasSettings.length > 0 && !gasSettings.find(gas => gas.key === searchField)) {
+      const firstEnabledGas = gasSettings.find(gas => gas.enabled);
+      if (firstEnabledGas) {
+        setSearchField(firstEnabledGas.key);
+      }
+    }
+  }, [gasSettings, searchField]);
 
   // Sorting (kept minimal)
   const [sortColumn, setSortColumn] = useState("Timestamp");
@@ -83,18 +97,34 @@ export default function DataLogs() {
       };
       
       if (result.success && result.data) {
-        const formatted = result.data.map((item) => ({
-          Timestamp: toLocalTs(item.timestamp),
-          "SO2 (ppm)": formatValue(item.SO2),
-          "NOx (ppm)": formatValue(item.NOx),
-          "O2 (%)": formatValue(item.O2),
-          "CO (ppm)": formatValue(item.CO),
-          "Dust (mg/m3)": formatValue(item.Dust),
-          "Temperature (°C)": formatValue(item.Temperature),
-          "Velocity (m/s)": formatValue(item.Velocity),
-          "Flowrate (m3/h)": formatValue(item.Flowrate),
-          "Pressure (Pa)": formatValue(item.Pressure),
-        }));
+        const toLocalTs = (iso) => {
+          const date = new Date(iso);
+          return date
+            .toLocaleString("th-TH", {
+              year: "numeric",
+              month: "2-digit",
+              day: "2-digit",
+              hour: "2-digit",
+              minute: "2-digit",
+              second: "2-digit",
+              timeZone: "Asia/Bangkok",
+              hour12: false,
+            })
+            .replace(
+              /(\d{1,2})\/(\d{1,2})\/(\d{4}),?\s*(\d{2}):(\d{2}):(\d{2})/,
+              "$3-$2-$1 $4:$5:$6"
+            );
+        };
+
+        // สร้างคอลัมน์แบบ dynamic จาก gas settings
+        const formatted = result.data.map((item) => {
+          const row = { Timestamp: toLocalTs(item.timestamp) };
+          gasSettings.filter(g => g.enabled).forEach(g => {
+            const col = `${g.display} (${g.unit})`;
+            row[col] = item[g.key] ? Number(item[g.key]).toFixed(2) : "0.00";
+          });
+          return row;
+        });
         setPreview(formatted);
         setTotalRecords(result.count || formatted.length || 0);
         // ใช้เวลาจากข้อมูลจริง (ข้อมูลล่าสุด)
@@ -111,7 +141,7 @@ export default function DataLogs() {
     } finally {
       setIsLoading(false);
     }
-  }, [API]);
+  }, [API, gasSettings]);
 
   useEffect(() => {
     fetchData();
@@ -151,18 +181,20 @@ export default function DataLogs() {
               );
           };
 
-          const formatted = result.data.map((item) => ({
-            Timestamp: toLocalTs(item.timestamp),
-            "SO2 (ppm)": item.SO2 ? Number(item.SO2).toFixed(2) : "0.00",
-            "NOx (ppm)": item.NOx ? Number(item.NOx).toFixed(2) : "0.00",
-            "O2 (%)": item.O2 ? Number(item.O2).toFixed(2) : "0.00",
-            "CO (ppm)": item.CO ? Number(item.CO).toFixed(2) : "0.00",
-            "Dust (mg/m3)": item.Dust ? Number(item.Dust).toFixed(2) : "0.00",
-            "Temperature (°C)": item.Temperature ? Number(item.Temperature).toFixed(2) : "0.00",
-            "Velocity (m/s)": item.Velocity ? Number(item.Velocity).toFixed(2) : "0.00",
-            "Flowrate (m3/h)": item.Flowrate ? Number(item.Flowrate).toFixed(2) : "0.00",
-            "Pressure (Pa)": item.Pressure ? Number(item.Pressure).toFixed(2) : "0.00",
-          }));
+          // สร้างคอลัมน์แบบ dynamic จาก gas settings
+          const formatted = result.data.map((item) => {
+            const row = {
+              Timestamp: toLocalTs(item.timestamp)
+            };
+            
+            // เพิ่มคอลัมน์ตาม gas settings ที่ enabled
+            gasSettings.filter(gas => gas.enabled).forEach(gas => {
+              const columnName = `${gas.display} (${gas.unit})`;
+              row[columnName] = item[gas.key] ? Number(item[gas.key]).toFixed(2) : "0.00";
+            });
+            
+            return row;
+          });
           setPreview(formatted);
           setTotalRecords(result.count || formatted.length || 0);
           // ใช้เวลาจากข้อมูลจริง (ข้อมูลล่าสุด)
@@ -222,18 +254,20 @@ export default function DataLogs() {
       };
 
       if (result.success && result.data) {
-        const formatted = result.data.map((item) => ({
-          Timestamp: toLocalTs(item.timestamp),
-          "SO2 (ppm)": item.SO2 ? Number(item.SO2).toFixed(2) : "0.00",
-          "NOx (ppm)": item.NOx ? Number(item.NOx).toFixed(2) : "0.00",
-          "O2 (%)": item.O2 ? Number(item.O2).toFixed(2) : "0.00",
-          "CO (ppm)": item.CO ? Number(item.CO).toFixed(2) : "0.00",
-          "Dust (mg/m3)": item.Dust ? Number(item.Dust).toFixed(2) : "0.00",
-          "Temperature (°C)": item.Temperature ? Number(item.Temperature).toFixed(2) : "0.00",
-          "Velocity (m/s)": item.Velocity ? Number(item.Velocity).toFixed(2) : "0.00",
-          "Flowrate (m3/h)": item.Flowrate ? Number(item.Flowrate).toFixed(2) : "0.00",
-          "Pressure (Pa)": item.Pressure ? Number(item.Pressure).toFixed(2) : "0.00",
-        }));
+        // สร้างคอลัมน์แบบ dynamic จาก gas settings
+        const formatted = result.data.map((item) => {
+          const row = {
+            Timestamp: toLocalTs(item.timestamp)
+          };
+          
+          // เพิ่มคอลัมน์ตาม gas settings ที่ enabled
+          gasSettings.filter(gas => gas.enabled).forEach(gas => {
+            const columnName = `${gas.display} (${gas.unit})`;
+            row[columnName] = item[gas.key] ? Number(item[gas.key]).toFixed(2) : "0.00";
+          });
+          
+          return row;
+        });
         setPreview(formatted);
         setTotalRecords(result.count || formatted.length || 0);
         // ใช้เวลาจากข้อมูลจริง (ข้อมูลล่าสุด)
@@ -259,7 +293,7 @@ export default function DataLogs() {
     } finally {
       setIsLoading(false);
     }
-  }, [from, to, searchScope, searchField, searchTerm, API]);
+  }, [from, to, searchScope, searchField, searchTerm, API, gasSettings]);
 
   // ------- Sorting (simple client-side visual sort) -------
   const handleSort = (column) => {
@@ -277,8 +311,11 @@ export default function DataLogs() {
     
     // ถ้าเลือกคอลัมน์เฉพาะ ให้กรองข้อมูลตามคอลัมน์นั้น
     if (searchScope === "field" && searchField) {
-      const columnKey = `${searchField} (${searchField === 'SO2' ? 'ppm' : searchField === 'NOx' ? 'ppm' : searchField === 'O2' ? '%' : searchField === 'CO' ? 'ppm' : searchField === 'Dust' ? 'mg/m3' : searchField === 'Temperature' ? '°C' : searchField === 'Velocity' ? 'm/s' : searchField === 'Flowrate' ? 'm3/h' : 'Pa'})`;
-      rows = rows.filter(row => row[columnKey] !== null && row[columnKey] !== undefined && row[columnKey] !== '');
+      const gas = gasSettings.find(g => g.key === searchField);
+      if (gas) {
+        const columnKey = `${gas.display} (${gas.unit})`;
+        rows = rows.filter(row => row[columnKey] !== null && row[columnKey] !== undefined && row[columnKey] !== '');
+      }
     }
     
     const asc = sortDirection === "asc";
@@ -397,7 +434,7 @@ export default function DataLogs() {
 
   // -------- UI (compact) --------
   // แสดง skeleton loading ถ้ากำลังโหลด
-  if (isLoading && preview.length === 0) {
+  if ((isLoading && preview.length === 0) || gasLoading) {
     return <DataLogsPageSkeleton />;
   }
 
@@ -464,18 +501,10 @@ export default function DataLogs() {
                     value={searchField}
                     onChange={(e) => setSearchField(e.target.value)}
                   >
-                    {[
-                      "SO2",
-                      "NOx",
-                      "O2",
-                      "CO",
-                      "Dust",
-                      "Temperature",
-                      "Velocity",
-                      "Flowrate",
-                      "Pressure",
-                    ].map((f) => (
-                      <option key={f} value={f}>{f}</option>
+                    {gasSettings.filter(gas => gas.enabled).map((gas) => (
+                      <option key={gas.key} value={gas.key}>
+                        {gas.display}
+                      </option>
                     ))}
                   </select>
                 </div>
@@ -559,8 +588,11 @@ export default function DataLogs() {
                     const allColumns = Object.keys(sortedPreview[0] || {});
                     // ถ้าเลือกคอลัมน์เฉพาะ ให้แสดงเฉพาะคอลัมน์นั้น + Timestamp
                     if (searchScope === "field" && searchField) {
-                      const columnKey = `${searchField} (${searchField === 'SO2' ? 'ppm' : searchField === 'NOx' ? 'ppm' : searchField === 'O2' ? '%' : searchField === 'CO' ? 'ppm' : searchField === 'Dust' ? 'mg/m3' : searchField === 'Temperature' ? '°C' : searchField === 'Velocity' ? 'm/s' : searchField === 'Flowrate' ? 'm3/h' : 'Pa'})`;
-                      return allColumns.filter(col => col === 'Timestamp' || col === columnKey);
+                      const gas = gasSettings.find(g => g.key === searchField);
+                      if (gas) {
+                        const columnKey = `${gas.display} (${gas.unit})`;
+                        return allColumns.filter(col => col === 'Timestamp' || col === columnKey);
+                      }
                     }
                     return allColumns;
                   })().map((h) => (
@@ -601,8 +633,11 @@ export default function DataLogs() {
                       const allColumns = Object.keys(sortedPreview[0] || {});
                       // ถ้าเลือกคอลัมน์เฉพาะ ให้แสดงเฉพาะคอลัมน์นั้น + Timestamp
                       if (searchScope === "field" && searchField) {
-                        const columnKey = `${searchField} (${searchField === 'SO2' ? 'ppm' : searchField === 'NOx' ? 'ppm' : searchField === 'O2' ? '%' : searchField === 'CO' ? 'ppm' : searchField === 'Dust' ? 'mg/m3' : searchField === 'Temperature' ? '°C' : searchField === 'Velocity' ? 'm/s' : searchField === 'Flowrate' ? 'm3/h' : 'Pa'})`;
-                        return allColumns.filter(col => col === 'Timestamp' || col === columnKey);
+                        const gas = gasSettings.find(g => g.key === searchField);
+                        if (gas) {
+                          const columnKey = `${gas.display} (${gas.unit})`;
+                          return allColumns.filter(col => col === 'Timestamp' || col === columnKey);
+                        }
                       }
                       return allColumns;
                     })().map((h) => (
@@ -622,8 +657,11 @@ export default function DataLogs() {
                     <td className="px-4 py-6 text-center text-slate-500" colSpan={(() => {
                       const allColumns = Object.keys(sortedPreview[0] || {});
                       if (searchScope === "field" && searchField) {
-                        const columnKey = `${searchField} (${searchField === 'SO2' ? 'ppm' : searchField === 'NOx' ? 'ppm' : searchField === 'O2' ? '%' : searchField === 'CO' ? 'ppm' : searchField === 'Dust' ? 'mg/m3' : searchField === 'Temperature' ? '°C' : searchField === 'Velocity' ? 'm/s' : searchField === 'Flowrate' ? 'm3/h' : 'Pa'})`;
-                        return allColumns.filter(col => col === 'Timestamp' || col === columnKey).length;
+                        const gas = gasSettings.find(g => g.key === searchField);
+                        if (gas) {
+                          const columnKey = `${gas.display} (${gas.unit})`;
+                          return allColumns.filter(col => col === 'Timestamp' || col === columnKey).length;
+                        }
                       }
                       return allColumns.length;
                     })()}>

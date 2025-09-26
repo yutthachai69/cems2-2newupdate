@@ -31,7 +31,7 @@ const ALARM_OPTIONS = [
 ];
 
 /* ---------- UI helpers ---------- */
-const DataTable = function DataTable({ cols, rows, rowKey = "id", onDelete }) {
+const DataTable = function DataTable({ cols, rows, rowKey = "id", onDelete, showDelete = true }) {
   return (
     <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
       <div className="overflow-x-auto">
@@ -43,7 +43,7 @@ const DataTable = function DataTable({ cols, rows, rowKey = "id", onDelete }) {
                   {c.title}
                 </th>
               ))}
-              <th className="px-4 py-3 text-center text-sm font-medium text-gray-700 w-24">Actions</th>
+              {showDelete && <th className="px-4 py-3 text-center text-sm font-medium text-gray-700 w-24">Actions</th>}
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200">
@@ -54,22 +54,26 @@ const DataTable = function DataTable({ cols, rows, rowKey = "id", onDelete }) {
                     {c.render ? c.render(r) : r[c.dataIndex]}
                   </td>
                 ))}
-                <td className="px-4 py-3 text-center">
-                  <div className="flex justify-center gap-1">
-                    <button
-                      className="px-2 py-1 bg-red-500 hover:bg-red-600 text-white text-xs font-medium rounded transition-colors"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onDelete?.(r);
-                      }}
-                    >Delete</button>
-                  </div>
-                </td>
+                {showDelete && (
+                  <td className="px-4 py-3 text-center">
+                    <div className="flex justify-center gap-1">
+                      <button
+                        className="px-2 py-1 bg-red-500 hover:bg-red-600 text-white text-xs font-medium rounded transition-colors"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onDelete?.(r);
+                        }}
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </td>
+                )}
               </tr>
             ))}
             {!rows.length && (
               <tr>
-                <td colSpan={cols.length + 1} className="px-4 py-8 text-center text-gray-500">
+                <td colSpan={cols.length + (showDelete ? 1 : 0)} className="px-4 py-8 text-center text-gray-500">
                   No data available
                 </td>
               </tr>
@@ -324,11 +328,11 @@ export default function Config() {
         message: `คุณแน่ใจไหมว่าจะลบ mapping "${mappingLabel}" นี้`
       });
     } else if (activeTab === 'gas') {
-      const gasLabel = row.display || row.key || row.name || '';
+      const gasLabel = row.display || row.key || row.name || 'ไม่ระบุชื่อ';
       setDeleteConfirm({
         type: 'gas',
         item: row,
-        message: `ต้องการลบ gas setting "${gasLabel}" หรือไม่?`
+        message: `ต้องการลบการตั้งค่าแก๊ส "${gasLabel}" หรือไม่?`
       });
     } else if (activeTab === 'status') {
       const statusLabel = row.name || row.key || row.display || '';
@@ -487,13 +491,13 @@ export default function Config() {
         });
         
         if (response.ok) {
-          setMessage(`ลบ gas setting "${gas.display || gas.key}" และบันทึกแล้ว`);
+          setMessage(`ลบการตั้งค่าแก๊ส "${gas.display || gas.key || 'ไม่ระบุชื่อ'}" และบันทึกแล้ว`);
         } else {
-          setMessage(`ลบ gas setting "${gas.display || gas.key}" แล้ว แต่เกิดข้อผิดพลาดในการบันทึก`);
+          setMessage(`ลบการตั้งค่าแก๊ส "${gas.display || gas.key || 'ไม่ระบุชื่อ'}" แล้ว แต่เกิดข้อผิดพลาดในการบันทึก`);
         }
       } catch (error) {
         console.error('Error saving after delete:', error);
-        setMessage(`ลบ gas setting "${gas.display || gas.key}" แล้ว แต่เกิดข้อผิดพลาดในการบันทึก`);
+        setMessage(`ลบการตั้งค่าแก๊ส "${gas.display || gas.key || 'ไม่ระบุชื่อ'}" แล้ว แต่เกิดข้อผิดพลาดในการบันทึก`);
       }
       
     } else if (deleteConfirm?.type === 'status_alarm') {
@@ -686,6 +690,30 @@ export default function Config() {
     } catch (error) {
       console.error("Failed to save system params:", error);
       setMessage('Failed to save system parameters');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const saveGasSettings = async () => {
+    setLoading(true);
+    try {
+      console.log('Saving gas settings:', gases);
+      const response = await fetch(`${API}/api/config/gas`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(gases)
+      });
+      
+      if (response.ok) {
+        setMessage('Gas settings saved successfully');
+      } else {
+        const errorData = await response.json();
+        setMessage(`Failed to save gas settings: ${errorData.detail || 'Unknown error'}`);
+      }
+    } catch (error) {
+      console.error("Failed to save gas settings:", error);
+      setMessage('Failed to save gas settings');
     } finally {
       setLoading(false);
     }
@@ -1021,8 +1049,64 @@ export default function Config() {
   const cGas = useMemo(() => ({
     cols: [
       { key: "enabled", title: "Enable", dataIndex: "enabled", render: (r) => <Switch checked={!!r.enabled} onChange={(v) => setGases(gases.map(g => g.id === r.id ? { ...g, enabled: v } : g))} /> },
-      { key: "display", title: "ชื่อแก๊ส", dataIndex: "display", render: (r) => <Text value={r.display || ""} onChange={(e) => setGases(gases.map(g => g.id === r.id ? { ...g, display: e.target.value } : g))} /> },
-      { key: "unit", title: "Unit", dataIndex: "unit", render: (r) => <Text value={r.unit || ""} onChange={(e) => setGases(gases.map(g => g.id === r.id ? { ...g, unit: e.target.value } : g))} className="w-20" /> },
+      { key: "showCorrected", title: "Show Corrected", dataIndex: "showCorrected", render: (r) => <Switch checked={!!r.showCorrected} onChange={(v) => setGases(gases.map(g => g.id === r.id ? { ...g, showCorrected: v } : g))} /> },
+      { key: "display", title: "ชื่อแก๊ส", dataIndex: "display", render: (r) => (
+        <select 
+          className="rounded-lg border border-gray-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200" 
+          value={r.display || ""} 
+          onChange={(e) => {
+            const newDisplay = e.target.value;
+            setGases(gases.map(g => g.id === r.id ? { 
+              ...g, 
+              display: newDisplay,
+              key: newDisplay // อัปเดต key ให้ตรงกับ display
+            } : g));
+          }}
+        >
+          <option value="">เลือกแก๊ส</option>
+          <option value="SO2">SO2</option>
+          <option value="NOx">NOx</option>
+          <option value="O2">O2</option>
+          <option value="CO">CO</option>
+          <option value="Dust">Dust</option>
+          <option value="Temperature">Temperature</option>
+          <option value="Velocity">Velocity</option>
+          <option value="Flowrate">Flowrate</option>
+          <option value="Pressure">Pressure</option>
+        </select>
+      ) },
+      { key: "unit", title: "Unit", dataIndex: "unit", render: (r) => (
+        <select 
+          className="rounded-lg border border-gray-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 w-24" 
+          value={r.unit || ""} 
+          onChange={(e) => setGases(gases.map(g => g.id === r.id ? { ...g, unit: e.target.value } : g))}
+        >
+          <option value="">เลือกหน่วย</option>
+          <option value="ppm">ppm</option>
+          <option value="%">%</option>
+          <option value="°C">°C</option>
+          <option value="°F">°F</option>
+          <option value="mg/m³">mg/m³</option>
+          <option value="m/s">m/s</option>
+          <option value="m³/h">m³/h</option>
+          <option value="Pa">Pa</option>
+          <option value="kPa">kPa</option>
+          <option value="bar">bar</option>
+          <option value="atm">atm</option>
+          <option value="μg/m³">μg/m³</option>
+          <option value="g/m³">g/m³</option>
+          <option value="kg/h">kg/h</option>
+          <option value="t/h">t/h</option>
+          <option value="m³/s">m³/s</option>
+          <option value="L/min">L/min</option>
+          <option value="L/h">L/h</option>
+          <option value="V">V</option>
+          <option value="A">A</option>
+          <option value="W">W</option>
+          <option value="Hz">Hz</option>
+          <option value="Ω">Ω</option>
+        </select>
+      ) },
       { key: "alarm", title: "Warning/Alarm", dataIndex: "alarm", render: (r) => <NumberField value={r.alarm ?? 80} onChange={(e) => setGases(gases.map(g => g.id === r.id ? { ...g, alarm: Number(e.target.value) || 80 } : g))} className="w-24" /> },
       { key: "actions", title: "Action", dataIndex: "actions", render: (r) => (
         <button 
@@ -1033,7 +1117,7 @@ export default function Config() {
         </button>
       )}
     ],
-    add: () => setGases([...gases, { id: Date.now(), key: "", display: "", unit: "", enabled: true, min: 0, max: 100, alarm: 80 }])
+    add: () => setGases([...gases, { id: Date.now(), key: "", display: "", unit: "", enabled: true, alarm: 80, showCorrected: true }])
   }), [gases]);
 
   // แสดง skeleton loading ถ้ากำลังโหลดและไม่มีข้อมูล
@@ -1292,7 +1376,7 @@ export default function Config() {
                 <div className="flex items-center gap-2">
                   <button
                     className="px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white font-medium rounded-lg transition-colors"
-                    onClick={saveThresholds}
+                    onClick={saveGasSettings}
                   >
                     Save
                   </button>
@@ -1305,7 +1389,7 @@ export default function Config() {
                 </div>
               }
             >
-        <DataTable cols={cGas.cols} rows={gases} rowKey="id" onDelete={handleDelete} />
+        <DataTable cols={cGas.cols} rows={gases} rowKey="id" onDelete={handleDelete} showDelete={false} />
       </Section>
           )}
 

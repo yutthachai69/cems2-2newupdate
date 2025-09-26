@@ -1,23 +1,9 @@
 [
   {
-    "parameter": "Velocity",
-    "unit": "m/s",
-    "warningThreshold": 15.0,
-    "dangerThreshold": 25.0,
-    "enabled": true
-  },
-  {
-    "parameter": "Flowrate",
-    "unit": "m³/h",
-    "warningThreshold": 10000.0,
-    "dangerThreshold": 15000.0,
-    "enabled": true
-  },
-  {
-    "parameter": "Pressure",
-    "unit": "Pa",
-    "warningThreshold": -100.0,
-    "dangerThreshold": -200.0,
+    "parameter": "SO2",
+    "unit": "ppm",
+    "warningThreshold": 50.0,
+    "dangerThreshold": 100.0,
     "enabled": true
   }
 ]

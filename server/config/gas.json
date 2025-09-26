@@ -1,52 +1,47 @@
 [
   {
-    "id": 1,
+    "id": 1758868749381,
     "key": "SO2",
-    "display": "SO₂",
+    "display": "SO2",
     "unit": "ppm",
     "enabled": true,
-    "min": 0,
-    "max": 200,
-    "alarm": 150
+    "alarm": 80,
+    "showCorrected": true
   },
   {
-    "id": 2,
+    "id": 1758868915686,
     "key": "NOx",
     "display": "NOx",
     "unit": "ppm",
     "enabled": true,
-    "min": 0,
-    "max": 500,
-    "alarm": 300
+    "alarm": 80,
+    "showCorrected": true
   },
   {
-    "id": 3,
+    "id": 1758869236656,
     "key": "O2",
-    "display": "O₂",
+    "display": "O2",
     "unit": "%",
     "enabled": true,
-    "min": 0,
-    "max": 25,
-    "alarm": 20
+    "alarm": 80,
+    "showCorrected": true
   },
   {
-    "id": 4,
+    "id": 1758869236984,
     "key": "CO",
     "display": "CO",
     "unit": "ppm",
     "enabled": true,
-    "min": 0,
-    "max": 100,
-    "alarm": 50
+    "alarm": 80,
+    "showCorrected": true
   },
   {
-    "id": 5,
+    "id": 1758870160319,
     "key": "Dust",
-    "display": "ฝุ่นละออง",
+    "display": "Dust",
     "unit": "mg/m³",
     "enabled": true,
-    "min": 0,
-    "max": 100,
-    "alarm": 50
+    "alarm": 80,
+    "showCorrected": true
   }
 ]

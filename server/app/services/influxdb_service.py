@@ -11,28 +11,23 @@ class InfluxDBService:
     def save_cems_data(self, stack_id: str, stack_name: str, data: dict, corrected_data: dict = None, status: str = "connected", device_name: str = None) -> bool:
         """บันทึกข้อมูล CEMS ลง InfluxDB"""
         try:
-            # สร้าง Point สำหรับข้อมูล CEMS
+            # สร้าง Point สำหรับข้อมูล CEMS แบบ dynamic
             point = Point("cems_data") \
                 .tag("stack_id", stack_id) \
                 .tag("stack_name", stack_name) \
                 .tag("status", status) \
-                .field("SO2", data.get("SO2", 0.0)) \
-                .field("NOx", data.get("NOx", 0.0)) \
-                .field("O2", data.get("O2", 0.0)) \
-                .field("CO", data.get("CO", 0.0)) \
-                .field("Dust", data.get("Dust", 0.0)) \
-                .field("Temperature", data.get("Temperature", 0.0)) \
-                .field("Velocity", data.get("Velocity", 0.0)) \
-                .field("Flowrate", data.get("Flowrate", 0.0)) \
-                .field("Pressure", data.get("Pressure", 0.0)) \
                 .time(datetime.utcnow(), WritePrecision.MS)
+            
+            # เพิ่ม fields แบบ dynamic จาก data dict
+            for field_name, field_value in data.items():
+                if isinstance(field_value, (int, float)):
+                    point = point.field(field_name, float(field_value))
 
-            # เพิ่มข้อมูล Corrected Values ถ้ามี
+            # เพิ่มข้อมูล Corrected Values ถ้ามี (แบบ dynamic)
             if corrected_data:
-                point = point.field("SO2Corr", corrected_data.get("SO2", 0.0)) \
-                           .field("NOxCorr", corrected_data.get("NOx", 0.0)) \
-                           .field("COCorr", corrected_data.get("CO", 0.0)) \
-                           .field("DustCorr", corrected_data.get("Dust", 0.0))
+                for field_name, field_value in corrected_data.items():
+                    if isinstance(field_value, (int, float)):
+                        point = point.field(f"{field_name}Corr", float(field_value))
 
             # เพิ่ม device_name เป็น tag ถ้ามี
             if device_name:

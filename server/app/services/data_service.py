@@ -112,8 +112,16 @@ class DataService:
         mappings = self.config_service.get_mappings()
         available_params = [m.name for m in mappings]
         
+        # สร้าง data dict แบบ dynamic จาก modbus_data
+        data_dict = {}
+        for param_name in available_params:
+            data_dict[param_name] = modbus_data.get(param_name, 0.0)
+        
+        # สร้าง DataPoint แบบ dynamic
         data = DataPoint(
             timestamp=current_time,
+            data=data_dict,
+            # Backward compatibility fields
             SO2=modbus_data.get("SO2", 0) if "SO2" in available_params else 0,
             NOx=modbus_data.get("NOx", 0) if "NOx" in available_params else 0,
             O2=modbus_data.get("O2", 0) if "O2" in available_params else 0,

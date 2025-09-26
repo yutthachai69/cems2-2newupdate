@@ -1,4 +1,5 @@
-# Data Parameters
+# Data Parameters - ใช้ dynamic จาก gas.json แทน
+# เก็บไว้เพื่อ backward compatibility เท่านั้น
 DATA_PARAMETERS = [
     {"name": "SO2", "unit": "ppm", "min": 0, "max": 1000},
     {"name": "NOx", "unit": "ppm", "min": 0, "max": 1000},
@@ -9,9 +10,11 @@ DATA_PARAMETERS = [
     {"name": "Velocity", "unit": "m/s", "min": 0, "max": 50},
     {"name": "Flowrate", "unit": "m³/h", "min": 0, "max": 50000},
     {"name": "Pressure", "unit": "Pa", "min": -1000, "max": 1000},
+    {"name": "HCI", "unit": "ppm", "min": 0, "max": 1000},
 ]
 
-# Default Thresholds
+# Default Thresholds - ใช้ dynamic จาก gas.json แทน
+# เก็บไว้เพื่อ backward compatibility เท่านั้น
 DEFAULT_THRESHOLDS = {
     "SO2": {"warning": 50, "danger": 100},
     "NOx": {"warning": 100, "danger": 200},
@@ -22,6 +25,7 @@ DEFAULT_THRESHOLDS = {
     "Velocity": {"warning": 15, "danger": 25},
     "Flowrate": {"warning": 10000, "danger": 15000},
     "Pressure": {"warning": -100, "danger": -200},
+    "HCI": {"warning": 50, "danger": 100},
 }
 
 # Status Categories

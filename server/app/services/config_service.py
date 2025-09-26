@@ -19,6 +19,9 @@ class ConfigService:
             import json
             import os
             
+            # โหลด thresholds
+            self._load_thresholds_from_file()
+            
             # ล้างข้อมูลเก่าใน memory
             self.devices.clear()
             self.mappings.clear()
@@ -108,4 +111,46 @@ class ConfigService:
 
     def update_thresholds(self, thresholds: List[ThresholdConfig]) -> bool:
         self.thresholds = thresholds
-        return True
+        # บันทึกลงไฟล์
+        return self._save_thresholds_to_file()
+    
+    def _load_thresholds_from_file(self):
+        """โหลดข้อมูล thresholds จากไฟล์"""
+        try:
+            import json
+            import os
+            
+            thresholds_file = "config/thresholds.json"
+            if os.path.exists(thresholds_file):
+                with open(thresholds_file, "r", encoding="utf-8") as f:
+                    thresholds_data = json.load(f)
+                    self.thresholds = [ThresholdConfig(**t) for t in thresholds_data]
+                    print(f"Loaded {len(self.thresholds)} thresholds from file")
+            else:
+                print("Thresholds file not found, using empty list")
+                self.thresholds = []
+        except Exception as e:
+            print(f"Error loading thresholds: {e}")
+            self.thresholds = []
+    
+    def _save_thresholds_to_file(self) -> bool:
+        """บันทึกข้อมูล thresholds ลงไฟล์"""
+        try:
+            import json
+            import os
+            
+            thresholds_file = "config/thresholds.json"
+            # สร้างโฟลเดอร์ถ้าไม่มี
+            os.makedirs(os.path.dirname(thresholds_file), exist_ok=True)
+            
+            # แปลง ThresholdConfig objects เป็น dict
+            thresholds_data = [t.dict() for t in self.thresholds]
+            
+            with open(thresholds_file, "w", encoding="utf-8") as f:
+                json.dump(thresholds_data, f, indent=2, ensure_ascii=False)
+            
+            print(f"Saved {len(self.thresholds)} thresholds to file")
+            return True
+        except Exception as e:
+            print(f"Error saving thresholds: {e}")
+            return False

@@ -1,6 +1,7 @@
 // src/pages/Graph.jsx
 import { useEffect, useRef, useState, useCallback } from "react";
 import { GraphPageSkeleton } from "../components/SkeletonLoader";
+import { useGasSettings } from "../hooks/useGasSettings";
 
 // ---- Canvas helpers: roundRect fallback ----
 function drawRoundRect(ctx, x, y, w, h, r = 6) {
@@ -318,6 +319,7 @@ const getTimeRangeMs = (timeRange) => {
 };
 
 export default function Graph() {
+  const { gasSettings, loading: gasLoading } = useGasSettings();
   const canvasRefs = useRef({});
   const [running, setRunning] = useState(true);
   const [timeRange, setTimeRange] = useState("realtime");
@@ -354,17 +356,29 @@ export default function Graph() {
   //   return null;
   // };
 
-  const [series, setSeries] = useState([
-    { name: "SO2", unit: "ppm", data: [], color: "#10b981" },
-    { name: "NOx", unit: "ppm", data: [], color: "#3b82f6" },
-    { name: "O2", unit: "%", data: [], color: "#eab308" },
-    { name: "CO", unit: "ppm", data: [], color: "#f59e0b" },
-    { name: "Dust", unit: "mg/m³", data: [], color: "#ef4444" },
-    { name: "Temperature", unit: "°C", data: [], color: "#f97316" },
-    { name: "Velocity", unit: "m/s", data: [], color: "#8b5cf6" },
-    { name: "Flowrate", unit: "m³/h", data: [], color: "#06b6d4" },
-    { name: "Pressure", unit: "Pa", data: [], color: "#ec4899" },
-  ]);
+  // สร้าง series จาก gas settings แบบ dynamic
+  const createSeriesFromGasSettings = useCallback(() => {
+    const colors = ["#10b981", "#3b82f6", "#eab308", "#f59e0b", "#ef4444", "#f97316", "#8b5cf6", "#06b6d4", "#ec4899"];
+    return gasSettings.map((gas, index) => ({
+      name: gas.key,
+      display: gas.display,
+      unit: gas.unit,
+      data: [],
+      color: colors[index % colors.length],
+      enabled: gas.enabled
+    }));
+  }, [gasSettings]);
+
+  const [series, setSeries] = useState([]);
+
+  // อัปเดต series เมื่อ gas settings เปลี่ยน
+  useEffect(() => {
+    if (gasSettings.length > 0) {
+      const newSeries = createSeriesFromGasSettings();
+      setSeries(newSeries);
+      console.log('Updated series from gas settings:', newSeries);
+    }
+  }, [gasSettings, createSeriesFromGasSettings]);
 
   // const saveSeriesToStorage = (seriesData) => {
   //   try {
@@ -573,20 +587,9 @@ const WS_URL = import.meta.env.VITE_WS_URL || "ws://127.0.0.1:8000";
           setSeries(prev => prev.map(s => {
             let value = 0;
             
-            // ดึงค่าจากข้อมูลที่ได้รับ หรือใช้ Mock data ถ้าไม่มีข้อมูลจริง
+            // ดึงค่าจากข้อมูลที่ได้รับ
             if (stackData.data && Object.keys(stackData.data).length > 0) {
-              switch(s.name) {
-                case "SO2": value = stackData.data.SO2 ?? 0; break;
-                case "NOx": value = stackData.data.NOx ?? 0; break;
-                case "O2": value = stackData.data.O2 ?? 0; break;
-                case "CO": value = stackData.data.CO ?? 0; break;
-                case "Dust": value = stackData.data.Dust ?? 0; break;
-                case "Temperature": value = stackData.data.Temperature ?? 0; break;
-                case "Velocity": value = stackData.data.Velocity ?? 0; break;
-                case "Flowrate": value = stackData.data.Flowrate ?? 0; break;
-                case "Pressure": value = stackData.data.Pressure ?? 0; break;
-                default: value = 0;
-              }
+              value = stackData.data[s.name] ?? 0;
             } else {
               // ไม่มีข้อมูลจริง - ใช้ค่า 0
               value = 0;
@@ -649,15 +652,7 @@ const WS_URL = import.meta.env.VITE_WS_URL || "ws://127.0.0.1:8000";
           // แปลงข้อมูล historical เป็นรูปแบบกราฟ
           const historicalData = result.data.map(item => ({
             timestamp: new Date(item.timestamp).getTime(),
-            SO2: item.SO2 || 0,
-            NOx: item.NOx || 0,
-            O2: item.O2 || 0,
-            CO: item.CO || 0,
-            Dust: item.Dust || 0,
-            Temperature: item.Temperature || 0,
-            Velocity: item.Velocity || 0,
-            Flowrate: item.Flowrate || 0,
-            Pressure: item.Pressure || 0
+            ...item // ใช้ข้อมูลทั้งหมดจาก API
           }));
           
           // อัปเดต series data
@@ -712,18 +707,7 @@ const WS_URL = import.meta.env.VITE_WS_URL || "ws://127.0.0.1:8000";
             let value = 0;
             
             // ดึงค่าจากข้อมูลที่ได้รับ
-            switch(s.name) {
-              case "SO2": value = d.SO2; break;
-              case "NOx": value = d.NOx; break;
-              case "O2": value = d.O2; break;
-              case "CO": value = d.CO; break;
-              case "Dust": value = d.Dust; break;
-              case "Temperature": value = d.Temperature; break;
-              case "Velocity": value = d.Velocity; break;
-              case "Flowrate": value = d.Flowrate; break;
-              case "Pressure": value = d.Pressure; break;
-              default: value = 0;
-            }
+            value = d[s.name] || 0;
             
             return { 
               t: d.timestamp, 
@@ -828,7 +812,7 @@ const WS_URL = import.meta.env.VITE_WS_URL || "ws://127.0.0.1:8000";
         try {
           const message = JSON.parse(event.data);
           if (message.type !== "data" || !message.data?.length) return;
-          const stackData = message.data[0];
+            const stackData = message.data[0];
           const raw = stackData.data || {};
           const corrected = stackData.corrected_data || {};
 
@@ -841,11 +825,11 @@ const WS_URL = import.meta.env.VITE_WS_URL || "ws://127.0.0.1:8000";
 
           setSeries(prev => prev.map(s => {
             // ดึงค่าตามชื่อซีรีส์
-            let value = 0;
+                let value = 0;
             if (s.name.includes("Corr")) {
               const base = s.name.replace("Corr", "");
               value = Number(corrected?.[base] ?? 0);
-            } else {
+                  } else {
               value = Number(raw?.[s.name] ?? 0);
             }
             if (!Number.isFinite(value) || Math.abs(value) > 1e6) value = 0; // กันค่าเพี้ยน
@@ -865,37 +849,37 @@ const WS_URL = import.meta.env.VITE_WS_URL || "ws://127.0.0.1:8000";
             const pruned = pruneWindow(data, ts, liveWindowMs, maxPtsInWindow);
             return { ...s, data: pruned };
           }));
-
-          setLastUpdate(new Date());
-          setIsConnected(true);
+            
+            setLastUpdate(new Date());
+            setIsConnected(true);
         } catch (e) {
           console.error("WS parse error", e);
         }
       };
 
-       ws.onerror = (e) => {
-         if (!isMounted) return;
-         console.warn("⚠️ Graph WebSocket error:", e);
-         setIsConnected(false);
+      ws.onerror = (e) => {
+        if (!isMounted) return;
+        console.warn("⚠️ Graph WebSocket error:", e);
+        setIsConnected(false);
          // ไม่ reconnect ทันที ให้รอ onclose
-       };
+      };
 
-       ws.onclose = (e) => {
-         if (!isMounted) return;
-         console.warn("🔌 Graph WebSocket closed", {
-           code: e.code,
-           reason: e.reason,
-           wasClean: e.wasClean
-         });
-         ws = null;
-         setIsConnected(false);
-         
-         // Only reconnect if not a clean close and component is still mounted
-         if (e.code !== 1000 && isMounted) {
+      ws.onclose = (e) => {
+        if (!isMounted) return;
+        console.warn("🔌 Graph WebSocket closed", {
+          code: e.code,
+          reason: e.reason,
+          wasClean: e.wasClean
+        });
+        ws = null;
+        setIsConnected(false);
+        
+        // Only reconnect if not a clean close and component is still mounted
+        if (e.code !== 1000 && isMounted) {
            console.log("🔄 Graph scheduling reconnect in 5s...");
            reconnectTimeout = setTimeout(connect, 5000); // เพิ่มเวลาเป็น 5 วินาที
-         }
-       };
+        }
+      };
     };
 
     connect();
@@ -1002,7 +986,7 @@ const WS_URL = import.meta.env.VITE_WS_URL || "ws://127.0.0.1:8000";
     const we = timeRange === "realtime" ? lastT : null;
 
     drawRealtimeChart(modalCanvas, [modalSeries], {
-      title: `${modalSeries.name} Real-time Monitoring`,
+      title: `${modalSeries.display || modalSeries.name} Real-time Monitoring`,
       yUnit: modalSeries.unit,
       maxPoints: 300,
       chartTimeRange: timeRange,
@@ -1015,7 +999,7 @@ const WS_URL = import.meta.env.VITE_WS_URL || "ws://127.0.0.1:8000";
   }, [modalOpen, modalSeries, timeRange, liveWindowMs]);
 
   // แสดง skeleton loading ถ้ากำลังโหลดและไม่มีข้อมูล
-  if (!isConnected && series.length === 0) {
+  if (gasLoading || (!isConnected && series.length === 0)) {
     return <GraphPageSkeleton />;
   }
 
@@ -1187,7 +1171,7 @@ const WS_URL = import.meta.env.VITE_WS_URL || "ws://127.0.0.1:8000";
                       className="w-4 h-4 rounded-full" 
                       style={{ backgroundColor: s.color }}
                     ></div>
-                    <h3 className="text-lg font-semibold text-gray-900">{s.name}</h3>
+                    <h3 className="text-lg font-semibold text-gray-900">{s.display || s.name}</h3>
                     <span className="text-sm text-gray-500">({s.unit})</span>
                   </div>
                   <div className="text-right">
@@ -1264,7 +1248,7 @@ const WS_URL = import.meta.env.VITE_WS_URL || "ws://127.0.0.1:8000";
                   style={{ backgroundColor: modalSeries.color }}
                 ></div>
                 <h2 className="text-2xl font-bold text-gray-900">
-                  {modalSeries.name} Real-time Monitoring
+                  {modalSeries.display || modalSeries.name} Real-time Monitoring
                 </h2>
                 <span className="text-lg text-gray-500">({modalSeries.unit})</span>
               </div>

@@ -38,5 +38,55 @@
     "format": "AB CD",
     "count": 2,
     "device": "test1"
+  },
+  {
+    "id": 5,
+    "name": "Dust",
+    "unit": "mg/m³",
+    "address": 8,
+    "dataType": "float32",
+    "format": "AB CD",
+    "count": 2,
+    "device": "test1"
+  },
+  {
+    "id": 6,
+    "name": "Temperature",
+    "unit": "°C",
+    "address": 10,
+    "dataType": "float32",
+    "format": "AB CD",
+    "count": 2,
+    "device": "test1"
+  },
+  {
+    "id": 7,
+    "name": "Velocity",
+    "unit": "m/s",
+    "address": 12,
+    "dataType": "float32",
+    "format": "AB CD",
+    "count": 2,
+    "device": "test1"
+  },
+  {
+    "id": 8,
+    "name": "Flowrate",
+    "unit": "m³/h",
+    "address": 14,
+    "dataType": "float32",
+    "format": "AB CD",
+    "count": 2,
+    "device": "test1"
+  },
+  {
+    "id": 9,
+    "name": "Pressure",
+    "unit": "Pa",
+    "address": 16,
+    "dataType": "float32",
+    "format": "AB CD",
+    "count": 2,
+    "device": "test1"
   }
 ]

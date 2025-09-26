@@ -28,9 +28,9 @@ class ModbusDataService:
             devices = self.config_service.get_devices()
             mappings = self.config_service.get_mappings()
             
-            # ลด debug logs - แสดงเฉพาะเมื่อมี error
-            # print(f"DEBUG: Loaded {len(devices)} devices: {[d.name for d in devices]}")
-            # print(f"DEBUG: Loaded {len(mappings)} mappings: {[m.name for m in mappings]}")
+            # เปิด debug log เพื่อดูการโหลด config
+            print(f"DEBUG: Loaded {len(devices)} devices: {[d.name for d in devices]}")
+            print(f"DEBUG: Loaded {len(mappings)} mappings: {[m.name for m in mappings]}")
             
             # สร้าง device_configs จาก devices และ mappings
             self.device_configs = {}
@@ -221,6 +221,9 @@ class ModbusDataService:
     def get_data_from_devices(self) -> Dict:
         """ดึงข้อมูลจากอุปกรณ์ Modbus ทั้งหมด"""
         try:
+            # โหลด configs ก่อนเสมอ
+            self._load_configs()
+            
             data = {}
             
             # ดึงข้อมูลจากแต่ละ device
@@ -247,15 +250,15 @@ class ModbusDataService:
                                 if value != 0.0:
                                     data[key] = value
                         
-                        # ลด debug logs - แสดงเฉพาะเมื่อมี error
-                        # print(f"DEBUG: Read data from {device_name}: {device_data}")
+                        # เปิด debug log เพื่อดูข้อมูลที่อ่านได้
+                        print(f"DEBUG: Read data from {device_name}: {device_data}")
                     else:
-                        # print(f"DEBUG: Failed to connect to {device_name}")
+                        print(f"DEBUG: Failed to connect to {device_name}")
                         pass
                 except Exception as e:
                     print(f"DEBUG: Error reading from {device_name}: {e}")
             
-            # ลด debug logs - แสดงเฉพาะเมื่อมี error
+            # เปิด debug log เพื่อดูข้อมูลรวม
             print(f"DEBUG: Combined data from all devices: {data}")
             return data if data else None
             

@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { HomePageSkeleton } from "../components/SkeletonLoader";
+import { useGasSettings } from "../hooks/useGasSettings";
 
 function MetricCard({ title, value = 0, unit, status = "normal", icon, warningThreshold, dangerThreshold }) {
   // กำหนดสถานะตามค่า
@@ -58,21 +59,8 @@ function MetricCard({ title, value = 0, unit, status = "normal", icon, warningTh
 }
 
 export default function Home() {
-    const [values, setValues] = useState({
-        SO2: 0,
-        NOx: 0,
-        O2: 0,
-        CO: 0,
-        Dust: 0,
-        Temperature: 0,
-        Velocity: 0,
-        Pressure: 0,
-        SO2Corr: 0,
-        NOxCorr: 0,
-        COCorr: 0,
-        DustCorr: 0,
-        Flowrate: 0,
-    });
+    const { gasSettings, loading: gasLoading } = useGasSettings();
+    const [values, setValues] = useState({});
     const [selectedStack, setSelectedStack] = useState("stack1");
     const [isConnected, setIsConnected] = useState(false);
     const [isConnecting, setIsConnecting] = useState(false);
@@ -133,21 +121,22 @@ const WS_URL = import.meta.env.VITE_WS_URL || "ws://127.0.0.1:8000";
                         const data = stackData.data;
                         const correctedData = stackData.corrected_data;
                         
-                        const newValues = {
-                            SO2: data.SO2 || 0,
-                            NOx: data.NOx || 0,
-                            O2: data.O2 || 0,
-                            CO: data.CO || 0,
-                            Dust: data.Dust || 0,
-                            Temperature: data.Temperature || 0,
-                            Velocity: data.Velocity || 0,
-                            Pressure: data.Pressure || 0,
-                            SO2Corr: correctedData ? correctedData.SO2 : 0,
-                            NOxCorr: correctedData ? correctedData.NOx : 0,
-                            COCorr: correctedData ? correctedData.CO : 0,
-                            DustCorr: correctedData ? correctedData.Dust : 0,
-                            Flowrate: data.Flowrate || 0,
-                        };
+                        // สร้าง values แบบ dynamic จาก data
+                        const newValues = {};
+                        
+                        // เพิ่มข้อมูลจาก data (raw values)
+                        if (data && typeof data === 'object') {
+                            for (const [key, value] of Object.entries(data)) {
+                                newValues[key] = value || 0;
+                            }
+                        }
+                        
+                        // เพิ่มข้อมูลจาก corrected_data
+                        if (correctedData && typeof correctedData === 'object') {
+                            for (const [key, value] of Object.entries(correctedData)) {
+                                newValues[`${key}Corr`] = value || 0;
+                            }
+                        }
                         
                         setValues(newValues);
                         setIsConnected(true);
@@ -244,30 +233,43 @@ const WS_URL = import.meta.env.VITE_WS_URL || "ws://127.0.0.1:8000";
 
                 {/* Main Data Grid */}
                 <div className="grid grid-cols-3 md:grid-cols-5 lg:grid-cols-9 gap-4 mb-6">
-                    <MetricCard title="SO2" value={values.SO2} unit="ppm" icon="☁️" warningThreshold={50} dangerThreshold={100} />
-                    <MetricCard title="NOx" value={values.NOx} unit="ppm" icon="⚙️" warningThreshold={100} dangerThreshold={200} />
-                    <MetricCard title="O2" value={values.O2} unit="%" icon="⚠️" warningThreshold={15} dangerThreshold={20} />
-                    <MetricCard title="CO" value={values.CO} unit="ppm" icon="☁️" warningThreshold={30} dangerThreshold={50} />
-                    <MetricCard title="Dust" value={values.Dust} unit="mg/m³" icon="🏭" warningThreshold={20} dangerThreshold={50} />
-                    <MetricCard title="Temperature" value={values.Temperature} unit="°C" icon="🌡️" warningThreshold={200} dangerThreshold={300} />
-                    <MetricCard title="Velocity" value={values.Velocity} unit="m/s" icon="⚡" warningThreshold={15} dangerThreshold={25} />
-                    <MetricCard title="Flowrate" value={values.Flowrate} unit="m³/h" icon="⚡" warningThreshold={10000} dangerThreshold={15000} />
-                    <MetricCard title="Pressure" value={values.Pressure} unit="Pa" icon="⏰" warningThreshold={-100} dangerThreshold={-200} />
+                    {/* Dynamic Cards from Settings */}
+                    {gasSettings.map((gas) => (
+                        <MetricCard 
+                            key={gas.id} 
+                            title={gas.display} 
+                            value={values[gas.key] || 0} 
+                            unit={gas.unit} 
+                            icon="☁️" 
+                            warningThreshold={gas.alarm * 0.7} 
+                            dangerThreshold={gas.alarm} 
+                        />
+                    ))}
                 </div>
 
 
-                {/* Corrected Values Section */}
-                <div className="mb-4">
-                    <h2 className="text-lg font-semibold text-gray-800 mb-4">
-                        Corrected to 7% Vol Oxygen
-                    </h2>
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                        <MetricCard title="SO2" value={values.SO2Corr} unit="ppm" icon="☁️" warningThreshold={50} dangerThreshold={100} />
-                        <MetricCard title="NOx" value={values.NOxCorr} unit="ppm" icon="⚙️" warningThreshold={100} dangerThreshold={200} />
-                        <MetricCard title="CO" value={values.COCorr} unit="ppm" icon="☁️" warningThreshold={30} dangerThreshold={50} />
-                        <MetricCard title="Dust" value={values.DustCorr} unit="mg/m³" icon="🏭" warningThreshold={20} dangerThreshold={50} />
+                {/* Corrected Values Section - แสดงเฉพาะเมื่อ showCorrected = true */}
+                {gasSettings.some(gas => gas.showCorrected) && (
+                    <div className="mb-4">
+                        <h2 className="text-lg font-semibold text-gray-800 mb-4">
+                            Corrected to 7% Vol Oxygen
+                        </h2>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                            {/* Dynamic Corrected Cards from Settings (เฉพาะที่ showCorrected = true) */}
+                            {gasSettings.filter(gas => gas.showCorrected && gas.enabled).map((gas) => (
+                                <MetricCard 
+                                    key={`${gas.id}-corr`} 
+                                    title={gas.display} 
+                                    value={values[`${gas.key}Corr`] || 0} 
+                                    unit={gas.unit} 
+                                    icon="☁️" 
+                                    warningThreshold={gas.alarm * 0.7} 
+                                    dangerThreshold={gas.alarm} 
+                                />
+                            ))}
+                        </div>
                     </div>
-                </div>
+                )}
             </div>
         </div>
     );

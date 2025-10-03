@@ -68,13 +68,20 @@ export default function Home() {
     const [lastUpdate, setLastUpdate] = useState(null);
     const websocketRef = useRef(null);
 
-const API = import.meta.env.VITE_BACKEND_URL || "http://127.0.0.1:8000";
-const WS_URL = import.meta.env.VITE_WS_URL || "ws://127.0.0.1:8000";
+const API = "http://127.0.0.1:8000";
+const WS_URL = "ws://127.0.0.1:8000";
 
     // ใช้ WebSocket เท่านั้น - ไม่มี HTTP fallback
 
     // WebSocket connection for real-time data - แก้ไขโครงสร้างให้ถูกต้อง
     useEffect(() => {
+        console.log("🏃 Home useEffect starting...", { WS_URL, selectedStack });
+        console.log("🔧 Environment check:", {
+            VITE_BACKEND_URL: import.meta.env.VITE_BACKEND_URL,
+            VITE_WS_URL: import.meta.env.VITE_WS_URL,
+            WS_URL,
+            API
+        });
         let ws = null;
         let reconnectTimeout = null;
         let isMounted = true;
@@ -181,6 +188,7 @@ const WS_URL = import.meta.env.VITE_WS_URL || "ws://127.0.0.1:8000";
             };
         };
 
+        console.log("🚀 Starting WebSocket connection...");
         connect();
 
         return () => {

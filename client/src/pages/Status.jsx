@@ -76,8 +76,8 @@ function Pill({ label, on, type = "status", category = "default", error = null }
 import { useState, useEffect, useRef } from "react";
 import { StatusPageSkeleton } from "../components/SkeletonLoader";
 
-const API = import.meta.env.VITE_BACKEND_URL || "http://127.0.0.1:8000";
-const WS_URL = import.meta.env.VITE_WS_URL || "ws://127.0.0.1:8000";
+const API = "http://127.0.0.1:8000";
+const WS_URL = "ws://127.0.0.1:8000";
 
 export default function Status() {
     const [statusData, setStatusData] = useState({

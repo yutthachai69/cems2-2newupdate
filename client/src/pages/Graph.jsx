@@ -389,8 +389,8 @@ export default function Graph() {
   //   }
   // };
 
-  const API = import.meta.env.VITE_BACKEND_URL || "http://127.0.0.1:8000";
-const WS_URL = import.meta.env.VITE_WS_URL || "ws://127.0.0.1:8000";
+  const API = "http://127.0.0.1:8000";
+const WS_URL = "ws://127.0.0.1:8000";
   
   // ตรวจสอบว่า API URL ถูกต้องหรือไม่
   if (!API || API === "undefined") {

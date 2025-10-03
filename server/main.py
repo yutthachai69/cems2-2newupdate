@@ -16,7 +16,7 @@ from reportlab.lib.units import inch
 from app.core.config import settings
 from app.core.constants import DATA_PARAMETERS, DEFAULT_THRESHOLDS, STATUS_CATEGORIES
 from app.services.data_service import DataService
-from app.domain.data_model import DataResponse
+from app.domain.data_model import DataResponse, DataPoint, StackData
 from app.services.config_service import ConfigService
 from app.domain.config_model import *
 from app.services.websocket_service import WebSocketService
@@ -407,40 +407,63 @@ async def data_websocket(websocket: WebSocket):
         except Exception as e:
             print(f"Error sending initial data: {e}")
         
-        # ส่งข้อมูลแบบ periodic ทุก 2 วินาที
+        # ส่งข้อมูลแบบ periodic ทุก 2 วินาที - แก้ให้ส่งทุกครั้ง มิใช่เฉพาะเวลาค่าเปลี่ยน
         import asyncio
+        from datetime import timezone, timedelta
+        
         async def send_periodic_data():
-            last_sent = None
+            thailand_tz = timezone(timedelta(hours=7))
             while connection_active:
                 try:
-                    # จำกัดเวลา query ไม่ให้ค้าง (เช่น 300ms)
-                    stack_data = await asyncio.wait_for(
-                        asyncio.to_thread(data_service.get_latest_data, "stack1"),
-                        timeout=0.3
-                    )
-                    if stack_data:
-                        # (ถ้าอยากลดแชท noisy) ส่งเฉพาะเมื่อค่ามีการเปลี่ยนแปลงจริง
-                        if stack_data != last_sent:
-                            message = {
-                                "type": "data",
-                                "data": [stack_data.dict()],
-                                "timestamp": datetime.now().isoformat()
-                            }
-                            # normalize timestamp → ISO string เหมือนเดิม
-                            for item in message["data"]:
-                                if 'data' in item and 'timestamp' in item['data']:
-                                    item['data']['timestamp'] = item['data']['timestamp'].isoformat()
-                                if 'corrected_data' in item and item['corrected_data'] and 'timestamp' in item['corrected_data']:
-                                    item['corrected_data']['timestamp'] = item['corrected_data']['timestamp'].isoformat()
+                    # สร้างข้อมูลจาก Modbus cache แทนการดึงจาก DB
+                    raw = _modbus_cache.get("data") or {}
+                    now = datetime.now(thailand_tz)
 
-                            await websocket.send_text(json.dumps(message))
-                            last_sent = stack_data
-                except asyncio.TimeoutError:
-                    # ข้ามรอบถ้าช้าเกิน
-                    pass
+                    # สร้าง DataPoint จาก cache
+                    data = DataPoint(
+                        timestamp=now,
+                        SO2=raw.get("SO2", 0.0),
+                        NOx=raw.get("NOx", 0.0),
+                        O2=raw.get("O2", 0.0),
+                        CO=raw.get("CO", 0.0),
+                        Dust=raw.get("Dust", 0.0),
+                        Temperature=raw.get("Temperature", 0.0),
+                        Velocity=raw.get("Velocity", 0.0),
+                        Flowrate=raw.get("Flowrate", 0.0),
+                        Pressure=raw.get("Pressure", 0.0),
+                    )
+
+                    corrected_data = data_service._calculate_corrected_values(data)
+
+                    stack_data = StackData(
+                        stack_id="stack1",
+                        stack_name="Stack 1",
+                        data=data,
+                        corrected_data=corrected_data,
+                        status=_modbus_cache.get("status", "unknown"),
+                    )
+
+                    # ส่งข้อมูลทุกครั้งพร้อม timestamp ปัจจุบัน
+                    message = {
+                        "type": "data",
+                        "data": [stack_data.dict()],
+                        "timestamp": datetime.now().isoformat()
+                    }
+                    
+                    # แปลง timestamp เป็น ISO string
+                    for item in message["data"]:
+                        if 'data' in item and 'timestamp' in item['data']:
+                            item['data']['timestamp'] = item['data']['timestamp'].isoformat()
+                        if 'corrected_data' in item and item['corrected_data'] and 'timestamp' in item['corrected_data']:
+                            item['corrected_data']['timestamp'] = item['corrected_data']['timestamp'].isoformat()
+
+                    await websocket.send_text(json.dumps(message))
+                    print(f"Periodic data sent at {datetime.now().strftime('%H:%M:%S')}")
+                    
                 except Exception as e:
                     print(f"Error sending periodic data: {e}")
                     break
+                    
                 await asyncio.sleep(2)
         
         # เริ่มส่งข้อมูลแบบ periodic

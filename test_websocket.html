@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>WebSocket Test</title>
+</head>
+<body>
+    <h1>WebSocket Test</h1>
+    <div id="status">Disconnected</div>
+    <div id="messages"></div>
+
+    <script>
+        const status = document.getElementById('status');
+        const messages = document.getElementById('messages');
+        
+        function addMessage(msg) {
+            const div = document.createElement('div');
+            div.textContent = new Date().toISOString() + ': ' + msg;
+            messages.appendChild(div);
+        }
+        
+        addMessage('Starting WebSocket test...');
+        
+        const ws = new WebSocket('ws://127.0.0.1:8000/ws/data');
+        
+        ws.onopen = function() {
+            status.textContent = 'Connected ✅';
+            addMessage('WebSocket connected!');
+        };
+        
+        ws.onmessage = function(event) {
+            addMessage('Received: ' + event.data.substring(0, 100) + '...');
+        };
+        
+        ws.onerror = function(error) {
+            status.textContent = 'Error ❌';
+            addMessage('WebSocket error: ' + error);
+        };
+        
+        ws.onclose = function() {
+            status.textContent = 'Disconnected ❌';
+            addMessage('WebSocket closed');
+        };
+        
+        // Send test message after 2 seconds
+        setTimeout(() => {
+            if (ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: "get_latest_data" }));
+                addMessage('Sent: get_latest_data');
+            }
+        }, 2000);
+    </script>
+</body>
+</html>

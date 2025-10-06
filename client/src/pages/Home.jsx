@@ -35,21 +35,21 @@ function MetricCard({ title, value = 0, unit, status = "normal", icon, warningTh
   };
 
   return (
-    <div className={`rounded-lg border p-4 transition-all duration-200 ${getCardStyle(currentStatus)}`}>
-      <div className="flex items-center justify-between mb-2">
-        <div className="text-gray-600 text-sm font-medium">{title}</div>
+    <div className={`rounded-lg border p-3 sm:p-4 transition-all duration-200 min-w-0 ${getCardStyle(currentStatus)}`}>
+      <div className="flex items-center justify-between mb-2 min-w-0">
+        <div className="text-gray-600 text-xs sm:text-sm font-medium truncate pr-2">{title}</div>
         {icon && (
-          <div className="text-gray-500 text-lg">
+          <div className="text-gray-500 text-sm sm:text-lg flex-shrink-0">
             {icon}
           </div>
         )}
       </div>
-      <div className="flex items-baseline gap-2">
-        <span className={`text-2xl font-bold tabular-nums ${getValueColor(currentStatus)}`}>
+      <div className="flex items-baseline gap-1 sm:gap-2 min-w-0">
+        <span className={`text-lg sm:text-xl lg:text-2xl font-bold tabular-nums truncate ${getValueColor(currentStatus)}`}>
           {Number(value).toFixed(1)}
         </span>
         {unit && (
-          <span className="text-sm text-gray-600">
+          <span className="text-xs sm:text-sm text-gray-600 flex-shrink-0">
             {unit}
           </span>
         )}
@@ -249,8 +249,8 @@ const WS_URL = "ws://127.0.0.1:8000";
                     </div>
                 </div>
 
-                {/* Main Data Grid */}
-                <div className="grid grid-cols-3 md:grid-cols-5 lg:grid-cols-9 gap-4 mb-6">
+                {/* Main Data Grid - Responsive */}
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-9 gap-3 sm:gap-4 mb-6">
                     {/* Dynamic Cards from Settings */}
                     {gasSettings.map((gas) => (
                         <MetricCard 
@@ -272,7 +272,7 @@ const WS_URL = "ws://127.0.0.1:8000";
                         <h2 className="text-lg font-semibold text-gray-800 mb-4">
                             Corrected to 7% Vol Oxygen
                         </h2>
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-4">
                             {/* Dynamic Corrected Cards from Settings (เฉพาะที่ showCorrected = true) */}
                             {gasSettings.filter(gas => gas.showCorrected && gas.enabled).map((gas) => (
                                 <MetricCard 

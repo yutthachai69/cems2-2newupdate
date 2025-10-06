@@ -179,30 +179,6 @@ export default function Config() {
     // { key:"SO2", display:"SO₂", unit:"ppm", enabled:true, min:0, max:200, alarm:150 }
   ]);
 
-  /* 4) Threshold Settings */
-  const [thresholds, setThresholds] = useState({
-    SO2: { warning: 50, danger: 100 },
-    NOx: { warning: 100, danger: 200 },
-    O2: { warning: 15, danger: 20 },
-    CO: { warning: 30, danger: 50 },
-    Dust: { warning: 20, danger: 50 },
-    Temperature: { warning: 200, danger: 300 },
-    Velocity: { warning: 15, danger: 25 },
-    Flowrate: { warning: 10000, danger: 15000 },
-    Pressure: { warning: -100, danger: -200 }
-  });
-
-  /* 5) System Parameters */
-  const [systemParams, setSystemParams] = useState({
-    logInterval: 1, // minutes
-    reconnectInterval: 5, // minutes
-    temperatureThreshold: 80,
-    pressureThreshold: 1000,
-    velocityThreshold: 30,
-    stackArea: 1.0,
-    stackDiameter: 1.0,
-    stackShape: "circular"
-  });
 
   /* 5) Status/Alarm Mapping */
   const [statusAlarmMapping, setStatusAlarmMapping] = useState([
@@ -531,9 +507,6 @@ export default function Config() {
   };
 
 
-  const updateSystemParam = (key, value) => {
-    setSystemParams(prev => ({ ...prev, [key]: value }));
-  };
 
   /* API functions */
   const reloadConfig = async () => {
@@ -550,13 +523,10 @@ export default function Config() {
         return Promise.race([fetchPromise, timeoutPromise]);
       };
 
-      const [devicesRes, mappingRes, gasRes, systemRes, stackRes, thresholdsRes, statusAlarmRes] = await Promise.allSettled([
+      const [devicesRes, mappingRes, gasRes, statusAlarmRes] = await Promise.allSettled([
         fetchWithTimeout(`${API}/api/config/devices`).then(r => r.json()),
         fetchWithTimeout(`${API}/api/config/mappings`).then(r => r.json()),
         fetchWithTimeout(`${API}/api/config/gas`).then(r => r.json()),
-        fetchWithTimeout(`${API}/api/config/system`).then(r => r.json()),
-        fetchWithTimeout(`${API}/api/config/stacks`).then(r => r.json()),
-        fetchWithTimeout(`${API}/api/config/thresholds`).then(r => r.json()),
         fetchWithTimeout(`${API}/api/config/status-alarm`).then(r => r.json())
       ]);
 
@@ -596,24 +566,6 @@ export default function Config() {
         setGases(gasRes.value.gas_settings);
       } else {
         console.warn("Failed to load gas settings:", gasRes.reason);
-      }
-
-      if (systemRes.status === 'fulfilled' && systemRes.value?.system_params) {
-        setSystemParams(prev => ({ ...prev, ...systemRes.value.system_params }));
-      } else {
-        console.warn("Failed to load system params:", systemRes.reason);
-      }
-
-      if (stackRes.status === 'fulfilled' && stackRes.value?.stacks) {
-        setSystemParams(prev => ({ ...prev, stacks: stackRes.value.stacks }));
-      } else {
-        console.warn("Failed to load stacks:", stackRes.reason);
-      }
-
-      if (thresholdsRes.status === 'fulfilled' && thresholdsRes.value?.thresholds) {
-        setThresholds(thresholdsRes.value.thresholds);
-      } else {
-        console.warn("Failed to load thresholds:", thresholdsRes.reason);
       }
 
       if (statusAlarmRes.status === 'fulfilled' && statusAlarmRes.value?.status_alarm_mapping) {
@@ -678,22 +630,6 @@ export default function Config() {
   };
 
 
-  const saveSystemParams = async () => {
-      setLoading(true);
-    try {
-      await fetch(`${API}/api/config/system`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(systemParams)
-      });
-      setMessage('System parameters saved successfully');
-    } catch (error) {
-      console.error("Failed to save system params:", error);
-      setMessage('Failed to save system parameters');
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const saveGasSettings = async () => {
     setLoading(true);
@@ -719,44 +655,6 @@ export default function Config() {
     }
   };
 
-  const saveThresholds = async () => {
-    setLoading(true);
-    try {
-      const thresholdsArray = Object.entries(thresholds).map(([parameter, values]) => ({
-        parameter,
-        unit: getUnitFromParameter(parameter),
-        warningThreshold: values.warning,
-        dangerThreshold: values.danger,
-        enabled: true
-      }));
-      await fetch(`${API}/api/config/thresholds`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(thresholdsArray)
-      });
-      setMessage('Thresholds saved successfully');
-    } catch (error) {
-      console.error("Failed to save thresholds:", error);
-      setMessage('Failed to save thresholds');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const getUnitFromParameter = (parameter) => {
-    const unitMap = {
-      "SO2": "ppm",
-      "NOx": "ppm",
-      "O2": "%",
-      "CO": "ppm",
-      "Dust": "mg/m³",
-      "Temperature": "°C",
-      "Velocity": "m/s",
-      "Flowrate": "m³/h",
-      "Pressure": "Pa"
-    };
-    return unitMap[parameter] || "";
-  };
 
   const saveStatusAlarmMapping = async () => {
     setLoading(true);
@@ -1181,9 +1079,6 @@ export default function Config() {
               { key: 'devices', label: 'การเชื่อมต่อ' },
               { key: 'mapping', label: 'การแมปข้อมูล' },
               { key: 'gas', label: 'การตั้งค่าแก๊ส' },
-              { key: 'thresholds', label: 'การตั้งค่าแจ้งเตือน' },
-              { key: 'system', label: 'การตั้งค่าระบบ' },
-              { key: 'stack', label: 'การตั้งค่า Stack' },
               { key: 'status', label: 'Status/Alarm' }
             ].map((tab) => (
               <button
@@ -1393,142 +1288,9 @@ export default function Config() {
       </Section>
           )}
 
-          {activeTab === 'thresholds' && (
-            <Section
-              title="การตั้งค่าแจ้งเตือน (Warning/Danger Thresholds)"
-              right={
-                <div className="flex items-center gap-2">
-                  <button
-                    className="px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white font-medium rounded-lg transition-colors"
-                    onClick={() => {
-                      // Save thresholds to backend
-                      console.log('Saving thresholds:', thresholds);
-                    }}
-                  >
-                    Save
-                  </button>
-                  <button
-                    className="px-4 py-2 bg-gray-500 hover:bg-gray-600 text-white font-medium rounded-lg transition-colors"
-                    onClick={() => {
-                      // Reset to default values
-                      setThresholds({
-                        SO2: { warning: 50, danger: 100 },
-                        NOx: { warning: 100, danger: 200 },
-                        O2: { warning: 15, danger: 20 },
-                        CO: { warning: 30, danger: 50 },
-                        Dust: { warning: 20, danger: 50 },
-                        Temperature: { warning: 200, danger: 300 },
-                        Velocity: { warning: 15, danger: 25 },
-                        Flowrate: { warning: 10000, danger: 15000 },
-                        Pressure: { warning: -100, danger: -200 }
-                      });
-                    }}
-                  >
-                    Reset
-                  </button>
-                </div>
-              }
-            >
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {Object.entries(thresholds).map(([key, values]) => (
-                  <div key={key} className="bg-gray-50 rounded-lg p-4 space-y-3">
-                    <h4 className="font-semibold text-gray-800">{key}</h4>
-                    <div className="space-y-3">
-                      <Field label="Warning Threshold" required>
-                        <NumberField
-                          value={values.warning}
-                          onChange={(e) => setThresholds(prev => ({
-                            ...prev,
-                            [key]: { ...prev[key], warning: parseFloat(e.target.value) || 0 }
-                          }))}
-                          className="w-full"
-                        />
-                      </Field>
-                      <Field label="Danger Threshold" required>
-                        <NumberField
-                          value={values.danger}
-                          onChange={(e) => setThresholds(prev => ({
-                            ...prev,
-                            [key]: { ...prev[key], danger: parseFloat(e.target.value) || 0 }
-                          }))}
-                          className="w-full"
-                        />
-                      </Field>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </Section>
-          )}
 
-          {activeTab === 'system' && (
-            <Section
-              title="System Parameters (การตั้งค่าพารามิเตอร์ระบบ)"
-              right={
-                <button
-                  className="px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white font-medium rounded-lg transition-colors"
-                  onClick={saveSystemParams}
-                >
-                  Save
-                </button>
-              }
-            >
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <div className="bg-gray-50 rounded-lg p-4">
-                  <h4 className="text-lg font-semibold text-gray-800 mb-4">
-                    การตั้งค่าการบันทึก
-                  </h4>
-                  <div className="space-y-4">
-                    <Field label="ช่วงเวลาบันทึก (นาที)" required>
-                      <NumberField
-                        value={systemParams.logInterval}
-                        onChange={(e) => updateSystemParam("logInterval", Number(e.target.value) || 1)}
-                        className="w-40"
-                      />
-                    </Field>
-                    <Field label="ช่วงเวลาลองเชื่อมต่อใหม่ (นาที)" required>
-                      <NumberField
-                        value={systemParams.reconnectInterval}
-                        onChange={(e) => updateSystemParam("reconnectInterval", Number(e.target.value) || 5)}
-                        className="w-40"
-                      />
-                    </Field>
-                  </div>
-                </div>
-                
-                <div className="bg-gray-50 rounded-lg p-4">
-                  <h4 className="text-lg font-semibold text-gray-800 mb-4">
-                    Threshold Values
-                  </h4>
-                  <div className="space-y-4">
-                    <Field label="Temperature (°C)" required>
-                      <NumberField
-                        value={systemParams.temperatureThreshold}
-                        onChange={(e) => updateSystemParam("temperatureThreshold", Number(e.target.value) || 80)}
-                        className="w-40"
-                      />
-                    </Field>
-                    <Field label="Pressure (Pa)" required>
-                      <NumberField
-                        value={systemParams.pressureThreshold}
-                        onChange={(e) => updateSystemParam("pressureThreshold", Number(e.target.value) || 1000)}
-                        className="w-40"
-                      />
-                    </Field>
-                    <Field label="Velocity (m/s)" required>
-                      <NumberField
-                        value={systemParams.velocityThreshold}
-                        onChange={(e) => updateSystemParam("velocityThreshold", Number(e.target.value) || 30)}
-                        className="w-40"
-                      />
-                    </Field>
-                  </div>
-                </div>
-              </div>
-            </Section>
-          )}
 
-          {activeTab === 'stack' && (
+          {false && activeTab === 'stack' && (
             <Section
               title="Stack Configuration (การตั้งค่า Stack)"
               right={

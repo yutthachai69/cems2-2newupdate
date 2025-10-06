@@ -57,19 +57,24 @@ function drawRealtimeChart(
   const plotH = height - pad.t - pad.b;
 
   // === เตรียมข้อมูล ===
+  console.log('🔍 drawRealtimeChart - Input series:', series);
   const trimmed = series.map(s => {
     const raw = (s.data || []).filter(p =>
       (!windowStart || p.t >= windowStart) &&
       (!windowEnd   || p.t <= windowEnd)
     );
+    const filtered = raw.slice(-maxPoints).filter(p => p && p.t && Number.isFinite(p.y));
+    console.log(`📈 ${s.name} - Raw data: ${raw.length}, Filtered: ${filtered.length}`);
     return {
       ...s,
-      data: raw.slice(-maxPoints).filter(p => p && p.t && Number.isFinite(p.y))
+      data: filtered
     };
   });
 
   const allTimes = trimmed.flatMap(s => s.data.map(p => p.t));
+  console.log('⏰ All times length:', allTimes.length);
   if (allTimes.length === 0) {
+    console.log('❌ No data points available - showing "No data available"');
     ctx.fillStyle = "#94a3b8";
     ctx.font = "13px system-ui, sans-serif";
     ctx.textAlign = "center";
@@ -180,12 +185,16 @@ function drawRealtimeChart(
   trimmed.forEach((s, i) => {
     const color = s.color || palette[i % palette.length];
     const pts = [...s.data].sort((a, b) => a.t - b.t);
+    console.log(`🎨 Drawing ${s.name} - Points: ${pts.length}, Color: ${color}`);
+    
     if (pts.length === 0) {
+      console.log(`❌ No points to draw for ${s.name}`);
       return;
     }
 
     // พื้นที่ + เส้น วาดเฉพาะถ้ามีอย่างน้อย 2 จุด
     if (pts.length >= 2) {
+      console.log(`✅ Drawing line for ${s.name} with ${pts.length} points`);
       // พื้นที่ใต้กราฟ
       const grad = ctx.createLinearGradient(0, pad.t, 0, height - pad.b);
       grad.addColorStop(0, color + "55");
@@ -337,29 +346,30 @@ export default function Graph() {
   const fetchingRef = useRef(false);
   const modalCanvasRef = useRef(null);
   
-  // const loadSeriesFromStorage = () => {
-  //   try {
-  //     const savedSeries = localStorage.getItem('graph_series_data');
-  //     if (savedSeries) {
-  //       const parsed = JSON.parse(savedSeries);
-  //       // ตรวจสอบว่าข้อมูลไม่เก่าเกินไป (ไม่เกิน 1 ชั่วโมง)
-  //       const now = Date.now();
-  //       const filtered = parsed.map(s => ({
-  //         ...s,
-  //         data: s.data.filter(d => (now - d.t) < 60 * 60 * 1000) // เก็บข้อมูลไม่เกิน 1 ชั่วโมง
-  //       }));
-  //       return filtered;
-  //     }
-  //   } catch (error) {
-  //     console.warn('Failed to load series from localStorage:', error);
-  //   }
-  //   return null;
-  // };
+  const loadSeriesFromStorage = () => {
+    try {
+      const savedSeries = localStorage.getItem('graph_series_data');
+      if (savedSeries) {
+        const parsed = JSON.parse(savedSeries);
+        // ตรวจสอบว่าข้อมูลไม่เก่าเกินไป (ไม่เกิน 2 ชั่วโมง)
+        const now = Date.now();
+        const filtered = parsed.map(s => ({
+          ...s,
+          data: s.data.filter(d => (now - d.t) < 2 * 60 * 60 * 1000) // เก็บข้อมูลไม่เกิน 2 ชั่วโมง
+        }));
+        return filtered;
+      }
+    } catch (error) {
+      console.warn('Failed to load series from localStorage:', error);
+    }
+    return null;
+  };
 
   // สร้าง series จาก gas settings แบบ dynamic
   const createSeriesFromGasSettings = useCallback(() => {
+    console.log('🏗️ Creating series from gas settings:', gasSettings);
     const colors = ["#10b981", "#3b82f6", "#eab308", "#f59e0b", "#ef4444", "#f97316", "#8b5cf6", "#06b6d4", "#ec4899"];
-    return gasSettings.map((gas, index) => ({
+    const newSeries = gasSettings.map((gas, index) => ({
       name: gas.key,
       display: gas.display,
       unit: gas.unit,
@@ -367,6 +377,8 @@ export default function Graph() {
       color: colors[index % colors.length],
       enabled: gas.enabled
     }));
+    console.log('✅ Created series:', newSeries);
+    return newSeries;
   }, [gasSettings]);
 
   const [series, setSeries] = useState([]);
@@ -380,14 +392,14 @@ export default function Graph() {
     }
   }, [gasSettings, createSeriesFromGasSettings]);
 
-  // const saveSeriesToStorage = (seriesData) => {
-  //   try {
-  //     localStorage.setItem('graph_series_data', JSON.stringify(seriesData));
-  //     console.log('💾 Saved series data to localStorage');
-  //   } catch (error) {
-  //     console.warn('Failed to save series to localStorage:', error);
-  //   }
-  // };
+  const saveSeriesToStorage = (seriesData) => {
+    try {
+      localStorage.setItem('graph_series_data', JSON.stringify(seriesData));
+      console.log('💾 Saved series data to localStorage');
+    } catch (error) {
+      console.warn('Failed to save series to localStorage:', error);
+    }
+  };
 
   const API = "http://127.0.0.1:8000";
 const WS_URL = "ws://127.0.0.1:8000";
@@ -753,25 +765,32 @@ const WS_URL = "ws://127.0.0.1:8000";
   }, [selectedStack, timeRange, liveWindowMs, isFirstLiveLoad, API]);
 
   // บันทึกข้อมูลลง localStorage เมื่อ series เปลี่ยนแปลง
-  // useEffect(() => {
-  //   if (series && series.length > 0) {
-  //     // บันทึกเฉพาะเมื่อมีข้อมูลจริง
-  //     const hasData = series.some(s => s.data && s.data.length > 0);
-  //     if (hasData) {
-  //       saveSeriesToStorage(series);
-  //     }
-  //   }
-  // }, [series]);
+  useEffect(() => {
+    if (series && series.length > 0) {
+      // บันทึกเฉพาะเมื่อมีข้อมูลจริง
+      const hasData = series.some(s => s.data && s.data.length > 0);
+      if (hasData) {
+        saveSeriesToStorage(series);
+      }
+    }
+  }, [series]);
 
   // ดึงข้อมูลเริ่มต้น
   useEffect(() => {
-    // รีเซ็ตก็ต่อเมื่อเพิ่ง "สลับ" มา realtime เท่านั้น
-    if (timeRange === "realtime" && prevRangeRef.current !== "realtime") {
-      // ตั้งค่าให้ดึงข้อมูลย้อนหลังเสมอ
-      setIsFirstLiveLoad(true);
+    // ลองโหลดข้อมูลจาก localStorage ก่อน
+    const savedSeries = loadSeriesFromStorage();
+    if (savedSeries && savedSeries.length > 0) {
+      setSeries(savedSeries);
+      setIsFirstLiveLoad(false); // ไม่ต้องดึงข้อมูลย้อนหลังเพราะมีข้อมูลแล้ว
+      console.log('📂 Loaded series data from localStorage');
+    } else {
+      // ถ้าไม่มีข้อมูลใน localStorage ให้ดึงข้อมูลใหม่
+      if (timeRange === "realtime" && prevRangeRef.current !== "realtime") {
+        setIsFirstLiveLoad(true);
+      }
+      fetchData();
     }
     prevRangeRef.current = timeRange;
-    fetchData();
   }, [selectedStack, timeRange, fetchData]);
 
   // WebSocket connection for real-time data
@@ -900,6 +919,19 @@ const WS_URL = "ws://127.0.0.1:8000";
     };
   }, [timeRange, selectedStack, WS_URL, liveWindowMs, running]);
 
+  // บันทึกข้อมูลเมื่อ component unmount
+  useEffect(() => {
+    return () => {
+      if (series && series.length > 0) {
+        const hasData = series.some(s => s.data && s.data.length > 0);
+        if (hasData) {
+          saveSeriesToStorage(series);
+          console.log('💾 Saved series data on component unmount');
+        }
+      }
+    };
+  }, [series]);
+
   // Polling สำหรับโหมด historical (ที่ไม่ใช่ realtime)
   useEffect(() => {
     if (timeRange === "realtime" || !running) return;
@@ -923,10 +955,20 @@ const WS_URL = "ws://127.0.0.1:8000";
 
   // วาดกราฟแต่ละตัว
   useEffect(() => {
+    console.log('🎨 Drawing graphs for series:', series.length);
     series.forEach((s) => {
+      console.log(`📊 Drawing ${s.name}:`, {
+        dataLength: s.data?.length || 0,
+        hasCanvas: !!canvasRefs.current[s.name],
+        firstDataPoint: s.data?.[0],
+        lastDataPoint: s.data?.at(-1)
+      });
       
       const canvas = canvasRefs.current[s.name];
-      if (!canvas) return;
+      if (!canvas) {
+        console.warn(`❌ No canvas found for ${s.name}`);
+        return;
+      }
       const lastT = s.data?.at(-1)?.t ?? Date.now();
       const ws = timeRange === "realtime" ? lastT - liveWindowMs : null;
       const we = timeRange === "realtime" ? lastT : null;
@@ -944,6 +986,7 @@ const WS_URL = "ws://127.0.0.1:8000";
         windowEnd: we
         // baselineValue: 3620554.57  // ตัวอย่าง: ค่าปิดก่อนหน้า (ถ้าต้องการเส้นประเทียบ)
       });
+      console.log(`✅ Drew chart for ${s.name}`);
     });
   }, [series, timeRange, liveWindowMs]);
 
@@ -975,6 +1018,17 @@ const WS_URL = "ws://127.0.0.1:8000";
     return () => window.removeEventListener("resize", onResize);
   }, [series, timeRange, liveWindowMs]);
 
+  // Sync modalSeries กับ series หลักเมื่อมีข้อมูลใหม่
+  useEffect(() => {
+    if (modalOpen && modalSeries) {
+      // หา series ที่ตรงกับ modalSeries จาก series หลัก
+      const currentSeries = series.find(s => s.name === modalSeries.name);
+      if (currentSeries) {
+        setModalSeries(currentSeries); // อัปเดต modalSeries ด้วยข้อมูลใหม่
+      }
+    }
+  }, [series, modalOpen, modalSeries]);
+
   // วาดกราฟใน Modal เมื่อเปิด
   useEffect(() => {
     if (!modalOpen || !modalSeries) return;
@@ -996,7 +1050,7 @@ const WS_URL = "ws://127.0.0.1:8000";
       windowStart: ws,
       windowEnd: we
     });
-  }, [modalOpen, modalSeries, timeRange, liveWindowMs]);
+  }, [modalOpen, modalSeries, timeRange, liveWindowMs, series]);
 
   // แสดง skeleton loading ถ้ากำลังโหลดและไม่มีข้อมูล
   if (gasLoading || (!isConnected && series.length === 0)) {

@@ -115,14 +115,19 @@ export default function Sidebar({ collapsed = false, onToggle }) {
         </div>
         <nav className="space-y-1">
           <Item to="/" icon={<HomeIcon />} label="HOME" collapsed={collapsed} />
-          <Item to="/graph" icon={<GraphIcon />} label="GRAPH" collapsed={collapsed} />
+          
+          {/* แสดง Graph และ Data Logs เฉพาะเมื่อล็อกอินแล้ว */}
+          {user && (
+            <>
+              <Item to="/graph" icon={<GraphIcon />} label="GRAPH" collapsed={collapsed} />
+              <Item to="/logs" icon={<DataLogsIcon />} label="DATA LOGS" collapsed={collapsed} />
+            </>
+          )}
           
           {/* Admin only navigation items */}
           {user?.permissions?.canAccessStatus && (
             <Item to="/status" icon={<StatusIcon />} label="STATUS" collapsed={collapsed} />
           )}
-          
-          <Item to="/logs" icon={<DataLogsIcon />} label="DATA LOGS" collapsed={collapsed} />
           
           {/* Admin only navigation items */}
           {user?.permissions?.canAccessStatus && (

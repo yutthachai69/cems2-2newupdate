@@ -2,6 +2,7 @@
 import { NavLink } from "react-router-dom";
 import { useState, useEffect } from "react";
 import { useAuth } from "../contexts/AuthContext";
+// ใช้โลโก้จาก public folder
 
 // Icon Components
 const HomeIcon = () => (
@@ -95,11 +96,16 @@ export default function Sidebar({ collapsed = false, onToggle }) {
     <div className="h-full bg-slate-900 text-slate-50 flex flex-col relative">
       <div className={`p-4 ${collapsed ? "px-2" : ""} pb-16`}>
         <div
-          className={`mb-4 text-center text-xs opacity-80 ${
-            collapsed ? "truncate" : ""
-          }`}
+          className={`mb-4 text-center ${collapsed ? "flex justify-center" : "flex justify-center"}`}
         >
-          {collapsed ? "C" : "CEMS"}
+          {!collapsed && (
+            <img 
+              src="/logo.png" 
+              alt="ASE" 
+              className="w-full h-auto rounded"
+              style={{ maxWidth: '100%' }}
+            />
+          )}
         </div>
 
         {/* Date and Time Display */}

@@ -541,7 +541,7 @@ export default function Config() {
     try {
       // ใช้ Promise.allSettled แทน Promise.all เพื่อไม่ให้ล้มเหลวทั้งหมดถ้า API บางตัวล้มเหลว
       // เพิ่ม timeout สำหรับแต่ละ fetch
-      const fetchWithTimeout = (url, timeout = 5000) => {
+      const fetchWithTimeout = (url, timeout = 15000) => {
         console.log(`DEBUG: Fetching ${url} with timeout ${timeout}ms`);
         const fetchPromise = fetch(url);
         const timeoutPromise = new Promise((_, reject) => {

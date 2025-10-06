@@ -59,13 +59,18 @@ export default function DataLogs() {
 
   // -------- Fetch latest (unchanged behavior) --------
   const fetchData = useCallback(async () => {
+    // ไม่ดึงข้อมูลใหม่ถ้ากำลังแสดงผลการค้นหา
+    if (isSearchResult) {
+      return;
+    }
+    
     try {
       setIsLoading(true);
       
       // ใช้ Promise.race แทน AbortController เพื่อหลีกเลี่ยง AbortError
       const fetchPromise = fetch(`${API}/api/influxdb/data/aggregate/stack1?hours=6&interval=1m`);
       const timeoutPromise = new Promise((_, reject) => {
-        setTimeout(() => reject(new Error('Request timeout')), 3000);
+        setTimeout(() => reject(new Error('Request timeout')), 10000); // เพิ่มเป็น 10 วินาที
       });
       
       const response = await Promise.race([fetchPromise, timeoutPromise]);
@@ -130,7 +135,10 @@ export default function DataLogs() {
         // ใช้เวลาจากข้อมูลจริง (ข้อมูลล่าสุด)
         const latestTimestamp = formatted.length > 0 ? formatted[0].timestamp : null;
         setLastUpdate(latestTimestamp ? new Date(latestTimestamp) : new Date());
-        setIsSearchResult(false); // ข้อมูล 6 ชม.ล่าสุด
+        // ไม่เปลี่ยน isSearchResult ถ้ากำลังแสดงผลการค้นหา
+        if (!isSearchResult) {
+          setIsSearchResult(false); // ข้อมูล 6 ชม.ล่าสุด
+        }
       } else {
         // If no data, keep it simple: empty preview
         setPreview([]);
@@ -138,10 +146,16 @@ export default function DataLogs() {
       }
     } catch (e) {
       console.error("Failed to fetch data", e);
+      // แสดงข้อความแจ้งเตือนเมื่อเกิด error
+      if (e.message.includes('timeout')) {
+        showNotification("การเชื่อมต่อช้า กรุณาลองใหม่อีกครั้ง", "error");
+      } else {
+        showNotification("เกิดข้อผิดพลาดในการโหลดข้อมูล", "error");
+      }
     } finally {
       setIsLoading(false);
     }
-  }, [API, gasSettings]);
+  }, [API, gasSettings, isSearchResult]);
 
   useEffect(() => {
     fetchData();
@@ -209,13 +223,13 @@ export default function DataLogs() {
       // การค้นหาปกติ
       const params = new URLSearchParams();
       if (from) {
-        // เพิ่มเวลาเริ่มต้นของวัน (00:00:00)
-        const fromDate = new Date(from + 'T00:00:00');
+        // เพิ่มเวลาเริ่มต้นของวัน (00:00:00) และ timezone UTC+7
+        const fromDate = new Date(from + 'T00:00:00+07:00');
         params.append("from_date", fromDate.toISOString());
       }
       if (to) {
-        // เพิ่มเวลาสิ้นสุดของวัน (23:59:59)
-        const toDate = new Date(to + 'T23:59:59');
+        // เพิ่มเวลาสิ้นสุดของวัน (23:59:59) และ timezone UTC+7
+        const toDate = new Date(to + 'T23:59:59+07:00');
         params.append("to_date", toDate.toISOString());
       }
 
@@ -340,12 +354,12 @@ export default function DataLogs() {
       const params = new URLSearchParams();
       
       if (downloadSettings.fromDate) {
-        const fromDate = new Date(downloadSettings.fromDate + 'T00:00:00');
+        const fromDate = new Date(downloadSettings.fromDate + 'T00:00:00+07:00');
         params.append("from_date", fromDate.toISOString());
       }
       
       if (downloadSettings.toDate) {
-        const toDate = new Date(downloadSettings.toDate + 'T23:59:59');
+        const toDate = new Date(downloadSettings.toDate + 'T23:59:59+07:00');
         params.append("to_date", toDate.toISOString());
       }
       

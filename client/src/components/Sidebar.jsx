@@ -116,19 +116,22 @@ export default function Sidebar({ collapsed = false, onToggle }) {
         <nav className="space-y-1">
           <Item to="/" icon={<HomeIcon />} label="HOME" collapsed={collapsed} />
           <Item to="/graph" icon={<GraphIcon />} label="GRAPH" collapsed={collapsed} />
+          
+          {/* Admin only navigation items */}
+          {user?.permissions?.canAccessStatus && (
+            <Item to="/status" icon={<StatusIcon />} label="STATUS" collapsed={collapsed} />
+          )}
+          
           <Item to="/logs" icon={<DataLogsIcon />} label="DATA LOGS" collapsed={collapsed} />
           
           {/* Admin only navigation items */}
           {user?.permissions?.canAccessStatus && (
-            <>
-              <Item to="/status" icon={<StatusIcon />} label="STATUS" collapsed={collapsed} />
-              <Item
-                to="/blowback"
-                icon={<BlowbackIcon />}
-                label="BLOWBACK"
-                collapsed={collapsed}
-              />
-            </>
+            <Item
+              to="/blowback"
+              icon={<BlowbackIcon />}
+              label="BLOWBACK"
+              collapsed={collapsed}
+            />
           )}
           
           {user?.permissions?.canAccessConfig && (

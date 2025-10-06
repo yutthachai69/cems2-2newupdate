@@ -134,8 +134,10 @@ class ModbusDataService:
             # print(f"Read {parameter} = {value}")
             return value
         except Exception as e:
-            print(f"Error reading parameter {parameter} on device {device_id}: {e}")
-            logger.error(f"Error reading parameter {parameter} on device {device_id}: {e}")
+            # ไม่แสดง error log เมื่อ device ไม่เชื่อมต่อได้ (ยังไม่ได้เปิด Modbus)
+            if "No connection could be made" not in str(e):
+                print(f"Error reading parameter {parameter} on device {device_id}: {e}")
+                logger.error(f"Error reading parameter {parameter} on device {device_id}: {e}")
             return None
 
     def get_cems_data(self, device_id: str) -> Optional[DataPoint]:
@@ -256,14 +258,18 @@ class ModbusDataService:
                         print(f"DEBUG: Failed to connect to {device_name}")
                         pass
                 except Exception as e:
-                    print(f"DEBUG: Error reading from {device_name}: {e}")
+                    # ไม่แสดง error log เมื่อ device ไม่เชื่อมต่อได้ (ยังไม่ได้เปิด Modbus)
+                    if "No connection could be made" not in str(e):
+                        print(f"DEBUG: Error reading from {device_name}: {e}")
             
             # เปิด debug log เพื่อดูข้อมูลรวม
             print(f"DEBUG: Combined data from all devices: {data}")
             return data if data else None
             
         except Exception as e:
-            print(f"DEBUG: Error in get_data_from_devices: {e}")
+            # ไม่แสดง error log เมื่อ device ไม่เชื่อมต่อได้ (ยังไม่ได้เปิด Modbus)
+            if "No connection could be made" not in str(e):
+                print(f"DEBUG: Error in get_data_from_devices: {e}")
             return None
 
     def _read_device_data(self, client, device_name: str) -> Dict:

@@ -1,0 +1,26 @@
+[
+  {
+    "name": "Temperature Controller Alarm",
+    "type": "alarm",
+    "address": 0,
+    "device": "test2",
+    "enabled": true,
+    "id": 1
+  },
+  {
+    "name": "Analyzer Malfunction",
+    "type": "alarm",
+    "address": 1,
+    "device": "test2",
+    "enabled": true,
+    "id": 2
+  },
+  {
+    "name": "Maintenance Mode",
+    "type": "status",
+    "address": 2,
+    "device": "test2",
+    "enabled": true,
+    "id": 3
+  }
+]

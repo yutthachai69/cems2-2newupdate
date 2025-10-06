@@ -16,7 +16,7 @@ class DataService:
         self.modbus_data_service = ModbusDataService(config_service)
         self.config_service = config_service or ConfigService()
         self.websocket_service = websocket_service
-        self.use_modbus = True  # เปิด Modbus เพื่อรับข้อมูล real-time
+        self.use_modbus = True  # เปิด Modbus แต่จะไม่ error เมื่อหา device ไม่เจอ
         self.influxdb_service = InfluxDBService()
         self.use_influxdb = True  # ใช้ InfluxDB เป็นหลัก
 

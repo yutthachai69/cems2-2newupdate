@@ -760,8 +760,8 @@ async def get_data_range(
 
 @app.get("/api/data/search")
 async def search_data(
-    start_time: Optional[datetime] = None,
-    end_time: Optional[datetime] = None,
+    from_date: Optional[datetime] = None,
+    to_date: Optional[datetime] = None,
     search_column: Optional[str] = None,
     search_value: Optional[str] = None,
     stack_id: Optional[str] = None,
@@ -769,7 +769,7 @@ async def search_data(
 ):
     """ค้นหาข้อมูล (ใช้ InfluxDB)"""
     try:
-        data = data_service.search_data(start_time, end_time, search_column, search_value, stack_id, limit)
+        data = data_service.search_data(from_date, to_date, search_column, search_value, stack_id, limit)
         return {"success": True, "data": data, "count": len(data)}
     except Exception as e:
         return {"success": False, "message": str(e)}

@@ -43,5 +43,41 @@
     "enabled": true,
     "alarm": 80,
     "showCorrected": true
+  },
+  {
+    "id": 1759714530928,
+    "key": "Temperature",
+    "display": "Temperature",
+    "unit": "°C",
+    "enabled": true,
+    "alarm": 80,
+    "showCorrected": false
+  },
+  {
+    "id": 1759714531187,
+    "key": "Velocity",
+    "display": "Velocity",
+    "unit": "m/s",
+    "enabled": true,
+    "alarm": 80,
+    "showCorrected": false
+  },
+  {
+    "id": 1759714531560,
+    "key": "Flowrate",
+    "display": "Flowrate",
+    "unit": "m³/h",
+    "enabled": true,
+    "alarm": 80,
+    "showCorrected": false
+  },
+  {
+    "id": 1759714532321,
+    "key": "Pressure",
+    "display": "Pressure",
+    "unit": "bar",
+    "enabled": true,
+    "alarm": 80,
+    "showCorrected": false
   }
 ]

@@ -149,25 +149,12 @@ class DataService:
     def save_data_to_influxdb(self, stack_data: StackData):
         """บันทึกข้อมูลลง InfluxDB"""
         try:
-            # แปลง StackData เป็น dictionary สำหรับ InfluxDB
-            data_dict = {
-                "SO2": stack_data.data.SO2,
-                "NOx": stack_data.data.NOx,
-                "O2": stack_data.data.O2,
-                "CO": stack_data.data.CO,
-                "Dust": stack_data.data.Dust,
-                "Temperature": stack_data.data.Temperature,
-                "Velocity": stack_data.data.Velocity,
-                "Flowrate": stack_data.data.Flowrate,
-                "Pressure": stack_data.data.Pressure
-            }
+            # ✅ ใช้ to_dict() เพื่อแปลง fixed + extra_params เป็น dict
+            data_dict = stack_data.data.to_dict()
             
-            corrected_dict = {
-                "SO2": stack_data.corrected_data.SO2 if stack_data.corrected_data else stack_data.data.SO2,
-                "NOx": stack_data.corrected_data.NOx if stack_data.corrected_data else stack_data.data.NOx,
-                "CO": stack_data.corrected_data.CO if stack_data.corrected_data else stack_data.data.CO,
-                "Dust": stack_data.corrected_data.Dust if stack_data.corrected_data else stack_data.data.Dust
-            }
+            corrected_dict = {}
+            if stack_data.corrected_data:
+                corrected_dict = stack_data.corrected_data.to_dict()
             
             success = self.influxdb_service.save_cems_data(
                 stack_id=stack_data.stack_id,
@@ -212,19 +199,33 @@ class DataService:
             
         # print(f"DEBUG: Correction factor = {correction_factor}")
         
-        corrected = DataPoint(
-            timestamp=data.timestamp,
-            SO2=round(data.SO2 * correction_factor, 1),
-            NOx=round(data.NOx * correction_factor, 1),
-            O2=data.O2,
-            CO=round(data.CO * correction_factor, 1),
-            Dust=round(data.Dust * correction_factor, 1),
-            Temperature=data.Temperature,
-            Velocity=data.Velocity,
-            Flowrate=data.Flowrate,
-            Pressure=data.Pressure
-        )
-        # print(f"DEBUG: Corrected values: SO2={corrected.SO2}, NOx={corrected.NOx}, CO={corrected.CO}, Dust={corrected.Dust}")
+        # ✅ สร้าง corrected data point
+        corrected = DataPoint(timestamp=data.timestamp)
+        
+        # ✅ รายการ parameters ที่ต้อง O2 correction (emission gases)
+        params_to_correct = ["SO2", "NOx", "CO", "Dust", "HCl", "NH3", "SO3", "H2S", "NO", "NO2"]
+        
+        # ✅ รายการ parameters ที่ไม่ต้อง correction (physical parameters)
+        params_no_correct = ["O2", "Temperature", "Velocity", "Flowrate", "Pressure", "Humidity"]
+        
+        # ✅ ดึงข้อมูลทั้งหมด (fixed + extra_params)
+        all_data = data.to_dict()
+        
+        for param_name, value in all_data.items():
+            if param_name in params_no_correct:
+                # ไม่ต้อง correct - copy ค่าเดิม
+                corrected.set(param_name, value)
+            elif param_name in params_to_correct:
+                # ต้อง correct
+                if value != 0:
+                    corrected.set(param_name, round(value * correction_factor, 1))
+                else:
+                    corrected.set(param_name, 0.0)
+            else:
+                # Parameters ที่ไม่รู้จัก - ไม่ correct (ปลอดภัย)
+                corrected.set(param_name, value)
+        
+        # print(f"DEBUG: Corrected values calculated for {len(all_data)} parameters")
         return corrected
 
     def get_available_stacks(self) -> List[dict]:

@@ -146,62 +146,34 @@ class ModbusDataService:
             return None
 
         try:
-            # ลด debug logs - แสดงเฉพาะเมื่อมี error
-            # print(f"Reading CEMS data for device: {device_id}")
-            # print(f"Device configs: {list(self.device_configs.keys())}")
-            # print(f"Connected devices: {list(self.connected_devices)}")
-            
             # อ่านเฉพาะ parameters ที่มีใน mappings
             config = self.device_configs[device_id]
             available_mappings = list(config["mappings"].keys())
-            # print(f"Available mappings: {available_mappings}")
             
-            # กำหนดค่าเริ่มต้น
-            so2 = nox = o2 = co = dust = temperature = velocity = flowrate = pressure = 0.0
-            
-            # อ่านเฉพาะที่มีใน mappings
-            if "SO2" in available_mappings:
-                so2 = self.read_parameter(device_id, "SO2") or 0.0
-            if "NOx" in available_mappings:
-                nox = self.read_parameter(device_id, "NOx") or 0.0
-            if "O2" in available_mappings:
-                o2 = self.read_parameter(device_id, "O2") or 0.0
-            if "CO" in available_mappings:
-                co = self.read_parameter(device_id, "CO") or 0.0
-            if "Dust" in available_mappings:
-                dust = self.read_parameter(device_id, "Dust") or 0.0
-            if "Temperature" in available_mappings:
-                temperature = self.read_parameter(device_id, "Temperature") or 0.0
-            if "Velocity" in available_mappings:
-                velocity = self.read_parameter(device_id, "Velocity") or 0.0
-            if "Flowrate" in available_mappings:
-                flowrate = self.read_parameter(device_id, "Flowrate") or 0.0
-            if "Pressure" in available_mappings:
-                pressure = self.read_parameter(device_id, "Pressure") or 0.0
-            
-            # ลด debug logs - แสดงเฉพาะเมื่อมี error
-            # print(f"Read values: SO2={so2}, NOx={nox}, O2={o2}, CO={co}, Dust={dust}")
-            # print(f"Read values: Temp={temperature}, Velocity={velocity}, Flowrate={flowrate}, Pressure={pressure}")
-
             # ใช้เวลาปัจจุบันที่ถูกต้อง (Thailand Time UTC+7)
             from datetime import timezone, timedelta
             thailand_tz = timezone(timedelta(hours=7))
             current_time = datetime.now(thailand_tz)
-            # ลด debug logs - แสดงเฉพาะเมื่อมี error
-            # print(f"DEBUG: Creating data point at {current_time} (Thailand Time)")
             
-            return DataPoint(
-                timestamp=current_time,
-                SO2=round(so2, 1),
-                NOx=round(nox, 1),
-                O2=round(o2, 1),
-                CO=round(co, 1),
-                Dust=round(dust, 1),
-                Temperature=round(temperature, 1),
-                Velocity=round(velocity, 1),
-                Flowrate=round(flowrate, 1),
-                Pressure=round(pressure, 1)
-            )
+            # ✅ สร้าง DataPoint
+            data_point = DataPoint(timestamp=current_time)
+            
+            # ✅ อ่าน parameters ทั้งหมดแบบ dynamic loop
+            for param_name in available_mappings:
+                try:
+                    value = self.read_parameter(device_id, param_name)
+                    if value is not None:
+                        # ใช้ set() method ที่จะเลือกว่าใช้ fixed หรือ extra_params
+                        data_point.set(param_name, round(value, 1))
+                    else:
+                        # ถ้าอ่านไม่ได้ให้ใส่ 0
+                        data_point.set(param_name, 0.0)
+                except Exception as e:
+                    logger.error(f"Error reading {param_name} from {device_id}: {e}")
+                    data_point.set(param_name, 0.0)
+            
+            return data_point
+            
         except Exception as e:
             logger.error(f"Error getting CEMS data for device {device_id}: {e}")
             return None

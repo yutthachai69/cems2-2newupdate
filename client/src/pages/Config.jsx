@@ -375,7 +375,11 @@ export default function Config() {
   };
 
   const handleDeleteGas = async (gas) => {
-    const gasLabel = gas.display || gas.key || gas.name || 'ไม่ระบุชื่อ';
+    // ตรวจสอบและใช้ชื่อแก๊สที่ถูกต้อง
+    const gasLabel = (gas.display && gas.display.trim()) || 
+                     (gas.key && gas.key.trim()) || 
+                     (gas.name && gas.name.trim()) || 
+                     'ไม่ระบุชื่อ';
     
     // ใช้ Switch Alert สำหรับการลบแก๊ส
     const confirmed = await showSwitchAlert({
@@ -1063,6 +1067,24 @@ export default function Config() {
           <option value="Velocity">Velocity</option>
           <option value="Flowrate">Flowrate</option>
           <option value="Pressure">Pressure</option>
+          {/* Emission Gases */}
+          <option value="CO2">CO₂</option>
+          <option value="CH4">CH₄</option>
+          <option value="HCl">HCl</option>
+          <option value="HF">HF</option>
+          <option value="NH3">NH₃</option>
+          <option value="H2S">H₂S</option>
+          <option value="THC">THC / VOC</option>
+          <option value="N2O">N₂O</option>
+          <option value="H2">H₂</option>
+          <option value="Cl2">Cl₂</option>
+          <option value="SO3">SO₃</option>
+          <option value="O3">O₃</option>
+          {/* Physical Parameters */}
+          <option value="H2O">H₂O (Moisture)</option>
+          <option value="Humidity">Humidity / Moisture</option>
+          <option value="AmbientTemp">Ambient Temp</option>
+          <option value="AmbientPressure">Ambient Pressure</option>
         </select>
       ) },
       { key: "unit", title: "Unit", dataIndex: "unit", render: (r) => (

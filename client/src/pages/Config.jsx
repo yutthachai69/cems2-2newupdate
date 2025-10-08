@@ -2,6 +2,7 @@
 import React, { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { Link } from "react-router-dom";
 import { ConfigPageSkeleton } from "../components/SkeletonLoader";
+import { useNotification, Notification, useSwitchAlert, SwitchAlert } from "../components/Notification";
 const API = import.meta.env.VITE_BACKEND_URL || "http://127.0.0.1:8000";
 
 // ข้อมูลสำหรับ Status/Alarm dropdown
@@ -163,6 +164,10 @@ export default function Config() {
   const [editForm, setEditForm] = useState({ name: '', host: '', port: 502, unit: 1 });
   const [deleteConfirm, setDeleteConfirm] = useState(null);
   const gasIdInitialized = useRef(false);
+  
+  // ใช้ notification และ switch alert hooks
+  const { notification, showNotification, hideNotification } = useNotification();
+  const { switchAlert, showSwitchAlert, hideSwitchAlert } = useSwitchAlert();
 
   /* 1) Devices */
   const [devices, setDevices] = useState([
@@ -292,7 +297,7 @@ export default function Config() {
       setDeleteConfirm({
         type: 'device',
         item: row,
-        message: `ต้องการลบ device "${row.name}" หรือไม่?${mappingCount > 0 ? `\n\n⚠️ จะลบ mappings ที่เกี่ยวข้องด้วย (${mappingCount} รายการ)` : ''}`
+        message: `ต้องการลบ device "${row.name}" หรือไม่?${mappingCount > 0 ? `\n\nจะลบ mappings ที่เกี่ยวข้องด้วย (${mappingCount} รายการ)` : ''}`
       });
     } else if (activeTab === 'mapping') {
       // ใช้ field ที่ถูกต้องสำหรับ mapping
@@ -304,12 +309,8 @@ export default function Config() {
         message: `คุณแน่ใจไหมว่าจะลบ mapping "${mappingLabel}" นี้`
       });
     } else if (activeTab === 'gas') {
-      const gasLabel = row.display || row.key || row.name || 'ไม่ระบุชื่อ';
-      setDeleteConfirm({
-        type: 'gas',
-        item: row,
-        message: `ต้องการลบการตั้งค่าแก๊ส "${gasLabel}" หรือไม่?`
-      });
+      // ใช้ Switch Alert สำหรับการลบแก๊ส
+      handleDeleteGas(row);
     } else if (activeTab === 'status') {
       const statusLabel = row.name || row.key || row.display || '';
       setDeleteConfirm({
@@ -373,16 +374,130 @@ export default function Config() {
     setEditForm({ name: '', host: '', port: 502, unit: 1 });
   };
 
-  const handleDeleteDevice = (device) => {
-    // นับจำนวน mappings ที่เกี่ยวข้อง
-    const relatedMappings = mapping.filter(m => m.device === device.name);
-    const mappingCount = relatedMappings.length;
+  const handleDeleteGas = async (gas) => {
+    const gasLabel = gas.display || gas.key || gas.name || 'ไม่ระบุชื่อ';
     
-    setDeleteConfirm({
-      type: 'device',
-      item: device,
-      message: `ต้องการลบ device "${device.name}" หรือไม่?${mappingCount > 0 ? `\n\n⚠️ จะลบ mappings ที่เกี่ยวข้องด้วย (${mappingCount} รายการ)` : ''}`
+    // ใช้ Switch Alert สำหรับการลบแก๊ส
+    const confirmed = await showSwitchAlert({
+      title: "ยืนยันการลบการตั้งค่าแก๊ส",
+      message: `คุณแน่ใจหรือไม่ที่จะลบการตั้งค่าแก๊ส "${gasLabel}"?`,
+      type: "warning",
+      buttons: ["ยกเลิก", "ลบ"]
     });
+
+    if (!confirmed) return; // ถ้าไม่ยืนยัน ให้หยุด
+
+    // ดำเนินการลบ
+    const gasToDelete = gas;
+    
+    // ลบแก๊สจาก state
+    setGases(prev => prev.filter(g => g.id !== gasToDelete.id));
+    
+    // บันทึกลงไฟล์ทันที
+    try {
+      const updatedGases = gases.filter(g => g.id !== gasToDelete.id);
+      const response = await fetch(`${API}/api/config/gas`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updatedGases)
+      });
+      
+      if (response.ok) {
+        showNotification(`ลบการตั้งค่าแก๊ส "${gasLabel}" สำเร็จ`, "success");
+      } else {
+        showNotification(`ลบการตั้งค่าแก๊ส "${gasLabel}" แล้ว แต่เกิดข้อผิดพลาดในการบันทึก`, "warning");
+      }
+    } catch (error) {
+      console.error('Error saving after delete:', error);
+      showNotification(`ลบการตั้งค่าแก๊ส "${gasLabel}" แล้ว แต่เกิดข้อผิดพลาดในการบันทึก`, "error");
+    }
+  };
+
+  const handleDeleteDevice = async (device) => {
+    // นับจำนวน mappings ทั้งสองประเภทที่เกี่ยวข้อง
+    const relatedGasMappings = mapping.filter(m => m.device === device.name);
+    const relatedStatusMappings = statusAlarmMapping.filter(s => s.device === device.name);
+    const gasMappingCount = relatedGasMappings.length;
+    const statusMappingCount = relatedStatusMappings.length;
+    const totalMappingCount = gasMappingCount + statusMappingCount;
+    
+    // สร้างข้อความแจ้งเตือนที่ครบถ้วน
+    let mappingMessage = '';
+    if (totalMappingCount > 0) {
+      mappingMessage = '\n\nจะลบ mappings ที่เกี่ยวข้องด้วย:';
+      if (gasMappingCount > 0) {
+        mappingMessage += `\n• Gas mappings (${gasMappingCount} รายการ)`;
+      }
+      if (statusMappingCount > 0) {
+        mappingMessage += `\n• Status/Alarm mappings (${statusMappingCount} รายการ)`;
+      }
+      mappingMessage += `\n• รวมทั้งหมด (${totalMappingCount} รายการ)`;
+    }
+    
+    // ใช้ Switch Alert แทน deleteConfirm
+    const confirmed = await showSwitchAlert({
+      title: "ยืนยันการลบอุปกรณ์",
+      message: `คุณแน่ใจหรือไม่ที่จะลบอุปกรณ์ "${device.name}"?${mappingMessage}`,
+      type: "warning",
+      buttons: ["ยกเลิก", "ลบ"]
+    });
+
+    if (!confirmed) return; // ถ้าไม่ยืนยัน ให้หยุด
+
+    // ดำเนินการลบ
+    const deviceToDelete = device;
+    
+    // ลบ device จาก state
+    setDevices(prev => prev.filter(d => d.id !== deviceToDelete.id));
+    
+    // ลบ Gas mappings ที่เกี่ยวข้องกับ device นี้ด้วย
+    setMapping(prev => prev.filter(m => m.device !== deviceToDelete.name));
+    
+    // ลบ Status/Alarm mappings ที่เกี่ยวข้องกับ device นี้ด้วย
+    setStatusAlarmMapping(prev => prev.filter(s => s.device !== deviceToDelete.name));
+    
+    // ถ้า device ที่ถูกลบเป็น selectedDevice ให้ยกเลิกการเลือก
+    if (selectedDevice?.name === deviceToDelete.name) {
+      setSelectedDevice(null);
+      localStorage.removeItem('cems_selected_device');
+    }
+    
+    // บันทึกลงไฟล์ทันที
+    try {
+      const updatedDevices = devices.filter(d => d.id !== deviceToDelete.id);
+      const updatedGasMappings = mapping.filter(m => m.device !== deviceToDelete.name);
+      const updatedStatusMappings = statusAlarmMapping.filter(s => s.device !== deviceToDelete.name);
+      
+      // บันทึก devices
+      const devicesResponse = await fetch(`${API}/api/config/devices`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updatedDevices)
+      });
+      
+      // บันทึก Gas mappings
+      const gasMappingsResponse = await fetch(`${API}/api/config/mappings`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updatedGasMappings)
+      });
+      
+      // บันทึก Status/Alarm mappings
+      const statusMappingsResponse = await fetch(`${API}/api/config/status-alarm`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updatedStatusMappings)
+      });
+      
+      if (devicesResponse.ok && gasMappingsResponse.ok && statusMappingsResponse.ok) {
+        showNotification(`ลบอุปกรณ์ "${deviceToDelete.name}" และ mappings ทั้งหมดสำเร็จ`, "success");
+      } else {
+        showNotification(`ลบอุปกรณ์ "${deviceToDelete.name}" แล้ว แต่เกิดข้อผิดพลาดในการบันทึกบางส่วน`, "warning");
+      }
+    } catch (error) {
+      console.error('Error saving after delete:', error);
+      showNotification(`ลบอุปกรณ์ "${deviceToDelete.name}" แล้ว แต่เกิดข้อผิดพลาดในการบันทึก`, "error");
+    }
   };
 
   const confirmDelete = async () => {
@@ -451,29 +566,6 @@ export default function Config() {
       } catch (error) {
         console.error('Error saving after delete:', error);
         setMessage(`ลบ mapping "${mappingToDelete.name}" แล้ว แต่เกิดข้อผิดพลาดในการบันทึก`);
-      }
-      
-    } else if (deleteConfirm?.type === 'gas') {
-      const gas = deleteConfirm.item;
-      setGases(prev => prev.filter(g => g.id !== gas.id));
-      
-      // บันทึกลงไฟล์ทันที
-      try {
-        const updatedGases = gases.filter(g => g.id !== gas.id);
-        const response = await fetch(`${API}/api/config/gas`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(updatedGases)
-        });
-        
-        if (response.ok) {
-          setMessage(`ลบการตั้งค่าแก๊ส "${gas.display || gas.key || 'ไม่ระบุชื่อ'}" และบันทึกแล้ว`);
-        } else {
-          setMessage(`ลบการตั้งค่าแก๊ส "${gas.display || gas.key || 'ไม่ระบุชื่อ'}" แล้ว แต่เกิดข้อผิดพลาดในการบันทึก`);
-        }
-      } catch (error) {
-        console.error('Error saving after delete:', error);
-        setMessage(`ลบการตั้งค่าแก๊ส "${gas.display || gas.key || 'ไม่ระบุชื่อ'}" แล้ว แต่เกิดข้อผิดพลาดในการบันทึก`);
       }
       
     } else if (deleteConfirm?.type === 'status_alarm') {
@@ -1058,7 +1150,7 @@ export default function Config() {
                   className="px-4 py-2 bg-white/20 hover:bg-white/30 text-white font-medium rounded-lg transition-colors"
             onClick={reloadConfig}
           >
-                  Reload
+                  Refresh
           </button>
         </div>
             </div>
@@ -1249,14 +1341,14 @@ export default function Config() {
         {!selectedDevice && (
           <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-4">
             <p className="text-yellow-800">
-              ⚠️ กรุณาเลือก Device ก่อนตั้งค่า Mapping
+              กรุณาเลือก Device ก่อนตั้งค่า Mapping
             </p>
           </div>
         )}
         {selectedDevice && (
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
             <p className="text-blue-800">
-              📱 กำลังตั้งค่า Mapping สำหรับ: <strong>{selectedDevice.name}</strong>
+              กำลังตั้งค่า Mapping สำหรับ: <strong>{selectedDevice.name}</strong>
             </p>
           </div>
         )}
@@ -1428,7 +1520,7 @@ export default function Config() {
               {selectedDevice && (
                 <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
                   <p className="text-blue-800">
-                    📱 กำลังตั้งค่า Status/Alarm สำหรับ: <strong>{selectedDevice.name}</strong>
+                    กำลังตั้งค่า Status/Alarm สำหรับ: <strong>{selectedDevice.name}</strong>
                   </p>
                 </div>
               )}
@@ -1582,6 +1674,25 @@ export default function Config() {
           </div>
         </div>
       )}
+      
+      {/* Notification Component */}
+      <Notification 
+        show={notification.show}
+        message={notification.message}
+        type={notification.type}
+        onClose={hideNotification}
+      />
+      
+      {/* Switch Alert Component */}
+      <SwitchAlert 
+        show={switchAlert.show}
+        title={switchAlert.title}
+        message={switchAlert.message}
+        type={switchAlert.type}
+        buttons={switchAlert.buttons}
+        onClose={hideSwitchAlert}
+        onConfirm={switchAlert.onConfirm}
+      />
     </div>
   );
 }

@@ -27,18 +27,20 @@ class DataService:
                 # ดึงข้อมูลจาก Modbus ตามการตั้งค่าใน Config
                 modbus_data = self.modbus_data_service.get_data_from_devices()
                 if modbus_data:
-                    print(f"DEBUG: DataService received modbus_data: {modbus_data}")
+                    # print(f"DEBUG: DataService received modbus_data: {modbus_data}")
                     # แปลงข้อมูล Modbus เป็น StackData
                     stack_data = self._convert_modbus_to_stack_data(modbus_data, stack_id)
-                    print(f"DEBUG: DataService created stack_data: {stack_data}")
+                    # print(f"DEBUG: DataService created stack_data: {stack_data}")
                     # บันทึกลง InfluxDB
                     if self.use_influxdb:
                         self.save_data_to_influxdb(stack_data)
                     return stack_data
                 else:
-                    print("DEBUG: No Modbus data available, trying InfluxDB fallback")
+                    # print("DEBUG: No Modbus data available, trying InfluxDB fallback")
+                    pass
             except Exception as e:
-                print(f"Modbus error: {e}")
+                # print(f"Modbus error: {e}")
+                pass
         
         # 2. ถ้าไม่มีข้อมูลจาก Modbus ให้ดึงจาก InfluxDB
         influxdb_data = self.influxdb_service.get_latest_cems_data(stack_id)
@@ -177,22 +179,38 @@ class DataService:
             )
             
             if success:
-                print(f"DEBUG: Saved data to InfluxDB: {stack_data.stack_id}")
+                # print(f"DEBUG: Saved data to InfluxDB: {stack_data.stack_id}")
+                pass
             else:
-                print(f"DEBUG: Failed to save data to InfluxDB: {stack_data.stack_id}")
+                # print(f"DEBUG: Failed to save data to InfluxDB: {stack_data.stack_id}")
+                pass
         except Exception as e:
-            print(f"DEBUG: Error saving data to InfluxDB: {str(e)}")
+            # print(f"DEBUG: Error saving data to InfluxDB: {str(e)}")
+            pass
 
 
     def _calculate_corrected_values(self, data: DataPoint) -> DataPoint:
         """คำนวณค่าที่ปรับแก้แล้วสำหรับ O2 7%"""
-        print(f"DEBUG: Calculating corrected values for O2={data.O2}%")
-        if data.O2 <= 0:
-            print("DEBUG: O2 <= 0, returning original data")
+        # print(f"DEBUG: Calculating corrected values for O2={data.O2}%")
+        
+        # ตรวจสอบค่าที่ไม่ถูกต้อง
+        if data.O2 <= 0 or data.O2 >= 21:
+            # print("DEBUG: O2 <= 0 or >= 21, returning original data")
             return data
         
-        correction_factor = 21.0 / (21.0 - data.O2)
-        print(f"DEBUG: Correction factor = {correction_factor}")
+        # ป้องกันการหารด้วยศูนย์
+        if abs(21.0 - data.O2) < 0.1:
+            # print("DEBUG: O2 too close to 21%, returning original data")
+            return data
+        
+        correction_factor = (21.0 - 7.0) / (21.0 - data.O2)
+        
+        # ตรวจสอบค่า correction factor ที่ไม่สมเหตุสมผล
+        if correction_factor <= 0 or correction_factor > 10:
+            # print(f"DEBUG: Invalid correction factor {correction_factor}, returning original data")
+            return data
+            
+        # print(f"DEBUG: Correction factor = {correction_factor}")
         
         corrected = DataPoint(
             timestamp=data.timestamp,
@@ -206,7 +224,7 @@ class DataService:
             Flowrate=data.Flowrate,
             Pressure=data.Pressure
         )
-        print(f"DEBUG: Corrected values: SO2={corrected.SO2}, NOx={corrected.NOx}, CO={corrected.CO}, Dust={corrected.Dust}")
+        # print(f"DEBUG: Corrected values: SO2={corrected.SO2}, NOx={corrected.NOx}, CO={corrected.CO}, Dust={corrected.Dust}")
         return corrected
 
     def get_available_stacks(self) -> List[dict]:

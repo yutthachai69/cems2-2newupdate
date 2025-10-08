@@ -60,9 +60,8 @@ function Pill({ label, on, type = "status", category = "default", error = null }
         <span className={`inline-block w-3 h-3 rounded-full ${getDotColor(type, on, category, error)}`} />
         <span className="text-sm font-medium">{label}</span>
         {error && (
-          <span className="text-xs text-yellow-600 ml-2" title={error}>
-            ⚠️
-          </span>
+            <span className="text-xs text-yellow-600 ml-2" title={error}>
+            </span>
         )}
       </div>
       <span className={`text-xs font-semibold px-2 py-1 rounded-full ${getBadgeColor(type, on, category, error)}`}>
@@ -75,6 +74,7 @@ function Pill({ label, on, type = "status", category = "default", error = null }
 
 import { useState, useEffect, useRef } from "react";
 import { StatusPageSkeleton } from "../components/SkeletonLoader";
+import { useNotification, Notification, useSwitchAlert, SwitchAlert } from "../components/Notification";
 
 const API = "http://127.0.0.1:8000";
 const WS_URL = "ws://127.0.0.1:8000";
@@ -91,6 +91,10 @@ export default function Status() {
     const [lastUpdate, setLastUpdate] = useState(null);
     const [isConnected, setIsConnected] = useState(false);
     const websocketRef = useRef(null);
+    
+    // ใช้ notification และ switch alert hooks
+    const { notification, showNotification, hideNotification } = useNotification();
+    const { switchAlert, showSwitchAlert, hideSwitchAlert } = useSwitchAlert();
 
     // ใช้ WebSocket เท่านั้น - ไม่มี HTTP fallback
 
@@ -107,7 +111,7 @@ export default function Status() {
             ws = new WebSocket(`${WS_URL}/ws/status`);
 
             ws.onopen = () => {
-                console.log("Status WebSocket connected");
+                // console.log("Status WebSocket connected");
                 setIsConnected(true);
                 setLoading(false); // หยุด skeleton loading
             };
@@ -115,7 +119,7 @@ export default function Status() {
             ws.onmessage = (event) => {
                 try {
                     const message = JSON.parse(event.data);
-                    console.log("Status WebSocket data received:", message);
+                    // console.log("Status WebSocket data received:", message);
                     
                     if (message.type === "status") {
                         setStatusData(message.data);
@@ -124,18 +128,18 @@ export default function Status() {
                         setLoading(false); // หยุด skeleton loading เมื่อได้รับข้อมูล
                     }
                 } catch (error) {
-                    console.error("Error parsing status WebSocket message:", error);
+                    // console.error("Error parsing status WebSocket message:", error);
                 }
             };
 
             ws.onerror = (e) => {
-                console.warn("Status WebSocket error:", e);
+                // console.warn("Status WebSocket error:", e);
                 setIsConnected(false);
                 setLoading(false); // หยุด skeleton loading เมื่อเกิด error
             };
 
             ws.onclose = () => {
-                console.warn("Status WebSocket closed, reconnect in 2s");
+                // console.warn("Status WebSocket closed, reconnect in 2s");
                 ws = null;
                 setIsConnected(false);
                 reconnectTimeout = setTimeout(connect, 2000);
@@ -158,6 +162,16 @@ export default function Status() {
 
     // ฟังก์ชัน acknowledge alarm
     const acknowledgeAlarm = async (alarmId) => {
+      // ยืนยันก่อนยืนยันการแจ้งเตือน
+      const confirmed = await showSwitchAlert({
+        title: "ยืนยันการแจ้งเตือน",
+        message: "คุณแน่ใจหรือไม่ที่จะยืนยันการแจ้งเตือนนี้?",
+        type: "warning",
+        buttons: ["ยกเลิก", "ยืนยัน"]
+      });
+
+      if (!confirmed) return; // ถ้าไม่ยืนยัน ให้หยุด
+
       try {
         const response = await fetch(`${API}/api/alarms/${alarmId}/acknowledge`, {
           method: "POST",
@@ -168,12 +182,13 @@ export default function Status() {
         if (result.success) {
           // WebSocket จะอัปเดตข้อมูลอัตโนมัติ
           console.log("Alarm acknowledged successfully");
+          showNotification("ยืนยันการแจ้งเตือนสำเร็จ", "success");
         } else {
-          alert(`Failed to acknowledge alarm: ${result.message}`);
+          showNotification(`ยืนยันการแจ้งเตือนไม่สำเร็จ: ${result.message}`, "error");
         }
       } catch (error) {
         console.error("Failed to acknowledge alarm:", error);
-        alert("Failed to acknowledge alarm");
+        showNotification("ยืนยันการแจ้งเตือนไม่สำเร็จ", "error");
       }
     };
 
@@ -229,7 +244,7 @@ export default function Status() {
                     hour12: false
                   }) : '-'}
                 </div>
-                <div className="text-xs text-green-600 mt-1">🔄 Auto-refresh: ON</div>
+                <div className="text-xs text-green-600 mt-1">Auto-refresh: ON</div>
                 
                 {/* ปุ่ม Refresh */}
                 <div className="mt-3">
@@ -246,7 +261,7 @@ export default function Status() {
                     }}
                     disabled={manualLoading}
                   >
-                    {manualLoading ? "Loading..." : "🔄 Refresh"}
+                    {manualLoading ? "Loading..." : "Refresh"}
                   </button>
                 </div>
               </div>
@@ -279,8 +294,27 @@ export default function Status() {
                 <Pill key={i} label={status.label} on={status.active} type="status" category={status.category} error={status.error} />
               ))}
             </div>
-          </div>
         </div>
       </div>
-    );
+      
+      {/* Notification Component */}
+      <Notification 
+        show={notification.show}
+        message={notification.message}
+        type={notification.type}
+        onClose={hideNotification}
+      />
+      
+      {/* Switch Alert Component */}
+      <SwitchAlert 
+        show={switchAlert.show}
+        title={switchAlert.title}
+        message={switchAlert.message}
+        type={switchAlert.type}
+        buttons={switchAlert.buttons}
+        onClose={hideSwitchAlert}
+        onConfirm={switchAlert.onConfirm}
+      />
+    </div>
+  );
 }

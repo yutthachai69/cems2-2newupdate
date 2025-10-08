@@ -18,7 +18,6 @@ export default function DataLogs() {
   // Search controls (compact)
   const [searchScope, setSearchScope] = useState("all"); // 'all' | 'field'
   const [searchField, setSearchField] = useState("SO2"); // used when scope==='field'
-  const [searchTerm, setSearchTerm] = useState("");
   
   // อัปเดต searchField เมื่อ gas settings เปลี่ยน
   useEffect(() => {
@@ -233,10 +232,10 @@ export default function DataLogs() {
         params.append("to_date", toDate.toISOString());
       }
 
-      if (searchScope === "all" && searchTerm) {
-        // ค้นหาทุกคอลัมน์ + มีคำค้น
+      if (searchScope === "all") {
+        // ค้นหาทุกคอลัมน์ - แสดงข้อมูลทั้งหมด
         params.append("search_column", "all");
-        params.append("search_value", searchTerm);
+        params.append("search_value", "");
       } else if (searchScope === "field") {
         // เลือกคอลัมน์เฉพาะ - แสดงข้อมูลทั้งหมดในคอลัมน์นั้น
         params.append("search_column", searchField);
@@ -290,8 +289,8 @@ export default function DataLogs() {
         setIsSearchResult(true); // ผลการค้นหา
         
         // แสดงข้อความแจ้งเตือนผลการค้นหา
-        if (searchScope === "all" && searchTerm) {
-          showNotification(`พบข้อมูล ${formatted.length} รายการ ที่ตรงกับ "${searchTerm}" ในทุกคอลัมน์`, "success");
+        if (searchScope === "all") {
+          showNotification(`แสดงข้อมูล ${formatted.length} รายการ ทั้งหมด`, "success");
         } else if (searchScope === "field") {
           showNotification(`แสดงข้อมูล ${formatted.length} รายการ ในคอลัมน์ ${searchField}`, "success");
         } else if (from || to) {
@@ -307,7 +306,7 @@ export default function DataLogs() {
     } finally {
       setIsLoading(false);
     }
-  }, [from, to, searchScope, searchField, searchTerm, API, gasSettings]);
+  }, [from, to, searchScope, searchField, API, gasSettings]);
 
   // ------- Sorting (simple client-side visual sort) -------
   const handleSort = (column) => {
@@ -527,19 +526,6 @@ export default function DataLogs() {
 
             {/* Search Term and Actions Row */}
             <div className="flex flex-col sm:flex-row gap-4 items-end">
-              {/* Search Term - Only show when searching all columns */}
-              {searchScope === "all" && (
-                <div className="flex-1">
-                  <label className="text-xs font-medium text-slate-600 mb-1">คำค้น</label>
-                  <input
-                    type="text"
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2"
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                  />
-                </div>
-              )}
-
               {/* Action Buttons */}
               <div className="flex flex-wrap gap-2">
                 <button

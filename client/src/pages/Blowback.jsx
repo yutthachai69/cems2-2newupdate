@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { BlowbackPageSkeleton } from "../components/SkeletonLoader";
+import { useNotification, Notification, useSwitchAlert, SwitchAlert } from "../components/Notification";
 
 const API = import.meta.env.VITE_BACKEND_URL || "http://127.0.0.1:8000";
 
@@ -39,9 +40,23 @@ export default function Blowback() {
     pulseOff: 3,
   });
 
+  // ใช้ notification และ switch alert hooks
+  const { notification, showNotification, hideNotification } = useNotification();
+  const { switchAlert, showSwitchAlert, hideSwitchAlert } = useSwitchAlert();
+
   const set = (k) => (v) => setForm((s) => ({ ...s, [k]: v }));
 
   const triggerManual = async () => {
+    // ยืนยันก่อนส่งคำสั่ง
+    const confirmed = await showSwitchAlert({
+      title: "ยืนยันการส่งคำสั่ง",
+      message: "คุณแน่ใจหรือไม่ที่จะส่งคำสั่ง Manual Blowback?",
+      type: "warning",
+      buttons: ["ยกเลิก", "ยืนยัน"]
+    });
+
+    if (!confirmed) return; // ถ้าไม่ยืนยัน ให้หยุด
+
     try {
       setLoading(true);
       const res = await fetch(`${API}/api/blowback/manual`, {
@@ -50,10 +65,10 @@ export default function Blowback() {
         body: JSON.stringify({ action: "start" }),
       });
       if (!res.ok) throw new Error(await res.text());
-      alert("ส่งคำสั่ง Blowback แล้ว");
+      showNotification("ส่งคำสั่ง Blowback แล้ว", "success");
     } catch (e) {
       console.error(e);
-      alert("ส่งคำสั่งไม่สำเร็จ");
+      showNotification("ส่งคำสั่งไม่สำเร็จ", "error");
     } finally {
       setLoading(false);
     }
@@ -68,9 +83,20 @@ export default function Blowback() {
       form.pulseOn < 0 ||
       form.pulseOff < 0
     ) {
-      alert("ค่าต้องไม่ติดลบ");
+      showNotification("ค่าต้องไม่ติดลบ", "warning");
       return;
     }
+
+    // ยืนยันก่อนบันทึกการตั้งค่า
+    const confirmed = await showSwitchAlert({
+      title: "ยืนยันการบันทึก",
+      message: "คุณแน่ใจหรือไม่ที่จะบันทึกการตั้งค่า Blowback?",
+      type: "info",
+      buttons: ["ยกเลิก", "บันทึก"]
+    });
+
+    if (!confirmed) return; // ถ้าไม่ยืนยัน ให้หยุด
+
     try {
       setLoading(true);
       const res = await fetch(`${API}/api/blowback/settings`, {
@@ -85,10 +111,10 @@ export default function Blowback() {
         }),
       });
       if (!res.ok) throw new Error(await res.text());
-      alert("บันทึกการตั้งค่า Blowback แล้ว");
+      showNotification("บันทึกการตั้งค่า Blowback แล้ว", "success");
     } catch (e) {
       console.error(e);
-      alert("บันทึกการตั้งค่าไม่สำเร็จ");
+      showNotification("บันทึกการตั้งค่าไม่สำเร็จ", "error");
     } finally {
       setLoading(false);
     }
@@ -270,6 +296,25 @@ export default function Blowback() {
           </div>
         </div>
       </div>
+      
+      {/* Notification Component */}
+      <Notification 
+        show={notification.show}
+        message={notification.message}
+        type={notification.type}
+        onClose={hideNotification}
+      />
+      
+      {/* Switch Alert Component */}
+      <SwitchAlert 
+        show={switchAlert.show}
+        title={switchAlert.title}
+        message={switchAlert.message}
+        type={switchAlert.type}
+        buttons={switchAlert.buttons}
+        onClose={hideSwitchAlert}
+        onConfirm={switchAlert.onConfirm}
+      />
     </div>
   );
 }

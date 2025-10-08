@@ -16,11 +16,139 @@
     "id": 2
   },
   {
-    "name": "Maintenance Mode",
-    "type": "status",
+    "name": "Sample Probe Alarm",
+    "type": "alarm",
     "address": 2,
     "device": "test2",
     "enabled": true,
     "id": 3
+  },
+  {
+    "name": "Alarm Light",
+    "type": "alarm",
+    "address": 3,
+    "device": "test2",
+    "enabled": true,
+    "id": 4
+  },
+  {
+    "name": "Maintenance Mode",
+    "type": "status",
+    "address": 4,
+    "device": "test2",
+    "enabled": true,
+    "id": 5
+  },
+  {
+    "name": "Calibration Through Probe",
+    "type": "status",
+    "address": 5,
+    "device": "test2",
+    "enabled": true,
+    "id": 6
+  },
+  {
+    "name": "Manual Blowback Button",
+    "type": "status",
+    "address": 6,
+    "device": "test2",
+    "enabled": true,
+    "id": 7
+  },
+  {
+    "name": "Analyzer Calibration",
+    "type": "status",
+    "address": 7,
+    "device": "test2",
+    "enabled": true,
+    "id": 8
+  },
+  {
+    "name": "Analyzer Holding Zero",
+    "type": "status",
+    "address": 8,
+    "device": "test2",
+    "enabled": true,
+    "id": 9
+  },
+  {
+    "name": "Analyzer Zero Indicator",
+    "type": "status",
+    "address": 9,
+    "device": "test2",
+    "enabled": true,
+    "id": 10
+  },
+  {
+    "name": "Sampling SOV",
+    "type": "status",
+    "address": 10,
+    "device": "test2",
+    "enabled": true,
+    "id": 11
+  },
+  {
+    "name": "Sampling Pump",
+    "type": "status",
+    "address": 11,
+    "device": "test2",
+    "enabled": true,
+    "id": 12
+  },
+  {
+    "name": "Direct Calibration SOV",
+    "type": "status",
+    "address": 12,
+    "device": "test2",
+    "enabled": true,
+    "id": 13
+  },
+  {
+    "name": "Blowback SOV",
+    "type": "status",
+    "address": 13,
+    "device": "test2",
+    "enabled": true,
+    "id": 14
+  },
+  {
+    "name": "Calibration Through Probe SOV",
+    "type": "status",
+    "address": 14,
+    "device": "test2",
+    "enabled": true,
+    "id": 15
+  },
+  {
+    "name": "Calibration Through Probe Light",
+    "type": "status",
+    "address": 15,
+    "device": "test2",
+    "enabled": true,
+    "id": 16
+  },
+  {
+    "name": "Blowback Light",
+    "type": "status",
+    "address": 16,
+    "device": "test2",
+    "enabled": true,
+    "id": 17
+  },
+  {
+    "name": "Blowback in Operation",
+    "type": "status",
+    "address": 17,
+    "device": "test2",
+    "enabled": true,
+    "id": 18
+  },
+  {
+    "name": "Hold Current Value",
+    "type": "status",
+    "address": 18,
+    "device": "test2",
+    "enabled": true,
+    "id": 19
   }
 ]

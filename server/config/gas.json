@@ -1,14 +1,5 @@
 [
   {
-    "id": 1758868749381,
-    "key": "SO2",
-    "display": "SO2",
-    "unit": "ppm",
-    "enabled": true,
-    "alarm": 80,
-    "showCorrected": true
-  },
-  {
     "id": 1758868915686,
     "key": "NOx",
     "display": "NOx",
@@ -68,16 +59,25 @@
     "display": "Flowrate",
     "unit": "m³/h",
     "enabled": true,
-    "alarm": 80,
+    "alarm": 300,
     "showCorrected": false
   },
   {
-    "id": 1759714532321,
+    "id": 1759889322791,
     "key": "Pressure",
     "display": "Pressure",
     "unit": "bar",
     "enabled": true,
     "alarm": 80,
     "showCorrected": false
+  },
+  {
+    "id": 1759893881688,
+    "key": "SO2",
+    "display": "SO2",
+    "unit": "ppm",
+    "enabled": true,
+    "alarm": 80,
+    "showCorrected": true
   }
 ]

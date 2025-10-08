@@ -57,14 +57,12 @@ function drawRealtimeChart(
   const plotH = height - pad.t - pad.b;
 
   // === เตรียมข้อมูล ===
-  console.log('🔍 drawRealtimeChart - Input series:', series);
   const trimmed = series.map(s => {
     const raw = (s.data || []).filter(p =>
       (!windowStart || p.t >= windowStart) &&
       (!windowEnd   || p.t <= windowEnd)
     );
     const filtered = raw.slice(-maxPoints).filter(p => p && p.t && Number.isFinite(p.y));
-    console.log(`📈 ${s.name} - Raw data: ${raw.length}, Filtered: ${filtered.length}`);
     return {
       ...s,
       data: filtered
@@ -72,9 +70,7 @@ function drawRealtimeChart(
   });
 
   const allTimes = trimmed.flatMap(s => s.data.map(p => p.t));
-  console.log('⏰ All times length:', allTimes.length);
   if (allTimes.length === 0) {
-    console.log('❌ No data points available - showing "No data available"');
     ctx.fillStyle = "#94a3b8";
     ctx.font = "13px system-ui, sans-serif";
     ctx.textAlign = "center";
@@ -367,7 +363,7 @@ export default function Graph() {
 
   // สร้าง series จาก gas settings แบบ dynamic
   const createSeriesFromGasSettings = useCallback(() => {
-    console.log('🏗️ Creating series from gas settings:', gasSettings);
+    console.log('Creating series from gas settings:', gasSettings);
     const colors = ["#10b981", "#3b82f6", "#eab308", "#f59e0b", "#ef4444", "#f97316", "#8b5cf6", "#06b6d4", "#ec4899"];
     const newSeries = gasSettings.map((gas, index) => ({
       name: gas.key,
@@ -411,7 +407,8 @@ const WS_URL = "ws://127.0.0.1:8000";
 
   // ฟังก์ชันตัดข้อมูลเก่า + บีบจำนวนจุด (เก็บข้อมูลเก่าไว้มากขึ้น)
   const pruneWindow = (points, now, windowMs, maxPoints) => {
-    const cutoff = now - windowMs;
+    const currentTime = Date.now(); // ใช้เวลาปัจจุบันแทนเวลาข้อมูล
+    const cutoff = currentTime - windowMs;
     let pruned = points.filter(p => 
       p && 
       p.t && 
@@ -501,7 +498,16 @@ const WS_URL = "ws://127.0.0.1:8000";
       return null;
     }
 
-    const times = series.data.map(p => p.t).filter(t => Number.isFinite(t));
+    // ใช้ข้อมูลที่กรองแล้วตาม window เหมือนกับที่กราฟแสดง
+    const now = Date.now(); // ใช้เวลาปัจจุบันแทนเวลาข้อมูล
+    const ws = timeRange === "realtime" ? now - liveWindowMs : null;
+    const we = timeRange === "realtime" ? now : null;
+    const filteredData = ws
+      ? (series.data || []).filter(p => p.t >= ws && p.t <= we)
+      : series.data;
+
+
+    const times = filteredData.map(p => p.t).filter(t => Number.isFinite(t));
     if (times.length === 0) return null;
     
     const minTime = Math.min(...times);
@@ -510,8 +516,9 @@ const WS_URL = "ws://127.0.0.1:8000";
 
     const tAtMouse = minTime + ((mouseX - pad.l) / plotW) * (maxTime - minTime);
 
+
     // หา nearest ด้วย binary search จะนิ่งกว่า (ข้อมูลเรียงเวลาอยู่แล้ว)
-    const arr = series.data;
+    const arr = filteredData;
     let lo = 0, hi = arr.length - 1;
     while (lo < hi) {
       const mid = (lo + hi) >> 1;
@@ -522,6 +529,7 @@ const WS_URL = "ws://127.0.0.1:8000";
     if (lo > 0 && Math.abs(arr[lo - 1].t - tAtMouse) < Math.abs(arr[lo].t - tAtMouse)) idx = lo - 1;
     const closest = arr[idx];
     if (!closest) return null;
+
 
     const d = new Date(closest.t);
     return {
@@ -731,7 +739,6 @@ const WS_URL = "ws://127.0.0.1:8000";
             Number.isFinite(d.y)
           );
           
-          console.log(`Historical ${s.name} data points:`, seriesData.length);
           
           // ใช้ข้อมูลใหม่เท่านั้น (ไม่รวมข้อมูลเก่า)
           return {
@@ -872,30 +879,30 @@ const WS_URL = "ws://127.0.0.1:8000";
             setLastUpdate(new Date());
             setIsConnected(true);
         } catch (e) {
-          console.error("WS parse error", e);
+          // console.error("WS parse error", e);
         }
       };
 
       ws.onerror = (e) => {
         if (!isMounted) return;
-        console.warn("⚠️ Graph WebSocket error:", e);
+        // console.warn("Graph WebSocket error:", e);
         setIsConnected(false);
          // ไม่ reconnect ทันที ให้รอ onclose
       };
 
       ws.onclose = (e) => {
         if (!isMounted) return;
-        console.warn("🔌 Graph WebSocket closed", {
-          code: e.code,
-          reason: e.reason,
-          wasClean: e.wasClean
-        });
+        // console.warn("🔌 Graph WebSocket closed", {
+        //   code: e.code,
+        //   reason: e.reason,
+        //   wasClean: e.wasClean
+        // });
         ws = null;
         setIsConnected(false);
         
         // Only reconnect if not a clean close and component is still mounted
         if (e.code !== 1000 && isMounted) {
-           console.log("🔄 Graph scheduling reconnect in 5s...");
+           // console.log("Graph scheduling reconnect in 5s...");
            reconnectTimeout = setTimeout(connect, 5000); // เพิ่มเวลาเป็น 5 วินาที
         }
       };
@@ -904,7 +911,7 @@ const WS_URL = "ws://127.0.0.1:8000";
     connect();
 
     return () => {
-      console.log("🧹 Graph cleaning up WebSocket connection");
+      // console.log("🧹 Graph cleaning up WebSocket connection");
       isMounted = false;
       
       if (reconnectTimeout) {
@@ -955,23 +962,16 @@ const WS_URL = "ws://127.0.0.1:8000";
 
   // วาดกราฟแต่ละตัว
   useEffect(() => {
-    console.log('🎨 Drawing graphs for series:', series.length);
     series.forEach((s) => {
-      console.log(`📊 Drawing ${s.name}:`, {
-        dataLength: s.data?.length || 0,
-        hasCanvas: !!canvasRefs.current[s.name],
-        firstDataPoint: s.data?.[0],
-        lastDataPoint: s.data?.at(-1)
-      });
       
       const canvas = canvasRefs.current[s.name];
       if (!canvas) {
         console.warn(`❌ No canvas found for ${s.name}`);
         return;
       }
-      const lastT = s.data?.at(-1)?.t ?? Date.now();
-      const ws = timeRange === "realtime" ? lastT - liveWindowMs : null;
-      const we = timeRange === "realtime" ? lastT : null;
+      const now = Date.now(); // ใช้เวลาปัจจุบันแทนเวลาข้อมูล
+      const ws = timeRange === "realtime" ? now - liveWindowMs : null;
+      const we = timeRange === "realtime" ? now : null;
 
       drawRealtimeChart(canvas, [s], { 
         title: `${s.name} Real-time Monitoring`, 
@@ -986,7 +986,6 @@ const WS_URL = "ws://127.0.0.1:8000";
         windowEnd: we
         // baselineValue: 3620554.57  // ตัวอย่าง: ค่าปิดก่อนหน้า (ถ้าต้องการเส้นประเทียบ)
       });
-      console.log(`✅ Drew chart for ${s.name}`);
     });
   }, [series, timeRange, liveWindowMs]);
 
@@ -996,9 +995,9 @@ const WS_URL = "ws://127.0.0.1:8000";
       series.forEach((s) => {
         const canvas = canvasRefs.current[s.name];
         if (!canvas) return;
-        const lastT = s.data?.at(-1)?.t ?? Date.now();
-        const ws = timeRange === "realtime" ? lastT - liveWindowMs : null;
-        const we = timeRange === "realtime" ? lastT : null;
+        const now = Date.now(); // ใช้เวลาปัจจุบันแทนเวลาข้อมูล
+        const ws = timeRange === "realtime" ? now - liveWindowMs : null;
+        const we = timeRange === "realtime" ? now : null;
 
         drawRealtimeChart(canvas, [s], { 
           title: `${s.name} Real-time Monitoring`, 

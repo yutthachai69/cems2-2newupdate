@@ -142,13 +142,5 @@
     "device": "test2",
     "enabled": true,
     "id": 18
-  },
-  {
-    "name": "Hold Current Value",
-    "type": "status",
-    "address": 18,
-    "device": "test2",
-    "enabled": true,
-    "id": 19
   }
 ]

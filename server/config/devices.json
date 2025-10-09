@@ -1,18 +1,18 @@
 [
   {
-    "name": "test1",
-    "mode": "TCP",
-    "host": "127.0.0.1",
-    "port": 502,
-    "unit": 1,
-    "id": 1
-  },
-  {
     "name": "test2",
     "mode": "TCP",
     "host": "127.0.0.1",
     "port": 503,
     "unit": 1,
     "id": 2
+  },
+  {
+    "name": "test3",
+    "mode": "TCP",
+    "host": "127.0.0.1",
+    "port": 504,
+    "unit": 1,
+    "id": 3
   }
 ]

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { HomePageSkeleton } from "../components/SkeletonLoader";
 import { useGasSettings } from "../hooks/useGasSettings";
 import { useNotification, Notification } from "../components/Notification";
@@ -69,9 +69,41 @@ export default function Home() {
     const [lastUpdate, setLastUpdate] = useState(null);
     const [isRefreshing, setIsRefreshing] = useState(false);
     const websocketRef = useRef(null);
+    const lastUpdateTimeRef = useRef(0);
+    const UPDATE_THROTTLE_MS = 1000; // อัปเดตทุก 1 วินาที
     
     // ใช้ notification hook
     const { notification, showNotification, hideNotification } = useNotification();
+
+    // Memoize gas cards เพื่อลด re-render
+    const gasCards = useMemo(() => {
+        return gasSettings.map((gas) => (
+            <MetricCard 
+                key={gas.id} 
+                title={gas.display} 
+                value={values[gas.key] || 0} 
+                unit={gas.unit} 
+                icon="" 
+                warningThreshold={gas.alarm * 0.7} 
+                dangerThreshold={gas.alarm} 
+            />
+        ));
+    }, [gasSettings, values]);
+
+    // Memoize corrected gas cards
+    const correctedGasCards = useMemo(() => {
+        return gasSettings.filter(gas => gas.showCorrected && gas.enabled).map((gas) => (
+            <MetricCard 
+                key={`${gas.id}-corr`} 
+                title={gas.display} 
+                value={values[`${gas.key}Corr`] || 0} 
+                unit={gas.unit} 
+                icon="" 
+                warningThreshold={gas.alarm * 0.7} 
+                dangerThreshold={gas.alarm} 
+            />
+        ));
+    }, [gasSettings, values]);
 
     // ฟังก์ชันสำหรับเก็บข้อมูลลง localStorage
     const saveValuesToStorage = (data) => {
@@ -185,6 +217,14 @@ const WS_URL = "ws://127.0.0.1:8000";
 
             ws.onmessage = (event) => {
                 if (!isMounted) return;
+                
+                // Throttle updates เพื่อลดการอัปเดตที่บ่อยเกินไป
+                const now = Date.now();
+                if (now - lastUpdateTimeRef.current < UPDATE_THROTTLE_MS) {
+                    return;
+                }
+                lastUpdateTimeRef.current = now;
+                
                 try {
                     const message = JSON.parse(event.data);
                     // console.log("📨 Received WebSocket data:", message.type);
@@ -194,29 +234,48 @@ const WS_URL = "ws://127.0.0.1:8000";
                         const data = stackData.data;
                         const correctedData = stackData.corrected_data;
                         
-                        // สร้าง values แบบ dynamic จาก data
-                        const newValues = {};
-                        
-                        // เพิ่มข้อมูลจาก data (raw values)
-                        if (data && typeof data === 'object') {
-                            for (const [key, value] of Object.entries(data)) {
-                                newValues[key] = value || 0;
+                        // ใช้ useCallback pattern เพื่อลด re-render
+                        setValues(prevValues => {
+                            // ตรวจสอบว่ามีการเปลี่ยนแปลงจริงหรือไม่
+                            let hasChanges = false;
+                            const newValues = { ...prevValues };
+                            
+                            // เพิ่มข้อมูลจาก data (raw values)
+                            if (data && typeof data === 'object') {
+                                for (const [key, value] of Object.entries(data)) {
+                                    const newValue = value || 0;
+                                    if (newValues[key] !== newValue) {
+                                        newValues[key] = newValue;
+                                        hasChanges = true;
+                                    }
+                                }
                             }
-                        }
-                        
-                        // เพิ่มข้อมูลจาก corrected_data
-                        if (correctedData && typeof correctedData === 'object') {
-                            for (const [key, value] of Object.entries(correctedData)) {
-                                newValues[`${key}Corr`] = value || 0;
+                            
+                            // เพิ่มข้อมูลจาก corrected_data
+                            if (correctedData && typeof correctedData === 'object') {
+                                for (const [key, value] of Object.entries(correctedData)) {
+                                    const newValue = value || 0;
+                                    const corrKey = `${key}Corr`;
+                                    if (newValues[corrKey] !== newValue) {
+                                        newValues[corrKey] = newValue;
+                                        hasChanges = true;
+                                    }
+                                }
                             }
-                        }
+                            
+                            // อัปเดต state และ localStorage เฉพาะเมื่อมีการเปลี่ยนแปลง
+                            if (hasChanges) {
+                                // บันทึกข้อมูลลง localStorage เมื่อได้รับข้อมูลใหม่
+                                saveValuesToStorage(newValues);
+                                return newValues;
+                            }
+                            
+                            // ไม่มีการเปลี่ยนแปลง ให้ return ค่าเดิม
+                            return prevValues;
+                        });
                         
-                        setValues(newValues);
                         setIsConnected(true);
                         setLastUpdate(new Date());
-                        
-                        // บันทึกข้อมูลลง localStorage เมื่อได้รับข้อมูลใหม่
-                        saveValuesToStorage(newValues);
                     }
                 } catch (error) {
                     // console.error("Error parsing WebSocket message:", error);
@@ -327,17 +386,7 @@ const WS_URL = "ws://127.0.0.1:8000";
                 {/* Main Data Grid - Responsive */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-4 mb-6">
                     {/* Dynamic Cards from Settings */}
-                    {gasSettings.map((gas) => (
-                        <MetricCard 
-                            key={gas.id} 
-                            title={gas.display} 
-                            value={values[gas.key] || 0} 
-                            unit={gas.unit} 
-                            icon="" 
-                            warningThreshold={gas.alarm * 0.7} 
-                            dangerThreshold={gas.alarm} 
-                        />
-                    ))}
+                    {gasCards}
                 </div>
 
 
@@ -349,17 +398,7 @@ const WS_URL = "ws://127.0.0.1:8000";
                         </h2>
                         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-4">
                             {/* Dynamic Corrected Cards from Settings (เฉพาะที่ showCorrected = true) */}
-                            {gasSettings.filter(gas => gas.showCorrected && gas.enabled).map((gas) => (
-                                <MetricCard 
-                                    key={`${gas.id}-corr`} 
-                                    title={gas.display} 
-                                    value={values[`${gas.key}Corr`] || 0} 
-                                    unit={gas.unit} 
-                                    icon="" 
-                                    warningThreshold={gas.alarm * 0.7} 
-                                    dangerThreshold={gas.alarm} 
-                                />
-                            ))}
+                            {correctedGasCards}
                         </div>
                     </div>
                 )}

@@ -1,15 +1,5 @@
 [
   {
-    "id": 1,
-    "name": "SO2",
-    "unit": "ppm",
-    "address": 0,
-    "dataType": "float32",
-    "format": "AB CD",
-    "count": 2,
-    "device": "test1"
-  },
-  {
     "id": 2,
     "name": "NOx",
     "unit": "ppm",
@@ -88,5 +78,25 @@
     "format": "AB CD",
     "count": 2,
     "device": "test1"
+  },
+  {
+    "id": 10,
+    "name": "NOx",
+    "unit": "ppm",
+    "address": 0,
+    "dataType": "float32",
+    "format": "AB CD",
+    "count": 2,
+    "device": "test3"
+  },
+  {
+    "id": 11,
+    "name": "O2",
+    "unit": "%",
+    "address": 6,
+    "dataType": "float32",
+    "format": "AB CD",
+    "count": 2,
+    "device": "test3"
   }
 ]

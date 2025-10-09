@@ -288,6 +288,13 @@ export default function Config() {
 
   const handleDelete = (row) => {
     console.log('handleDelete called:', { activeTab, row });
+    console.log('Row data fields:', { 
+      id: row.id, 
+      display: row.display, 
+      key: row.key, 
+      name: row.name,
+      unit: row.unit 
+    });
     
     if (activeTab === 'devices') {
       // นับจำนวน mappings ที่เกี่ยวข้อง
@@ -375,11 +382,15 @@ export default function Config() {
   };
 
   const handleDeleteGas = async (gas) => {
+    console.log('handleDeleteGas called with gas:', gas);
+    
     // ตรวจสอบและใช้ชื่อแก๊สที่ถูกต้อง
     const gasLabel = (gas.display && gas.display.trim()) || 
                      (gas.key && gas.key.trim()) || 
                      (gas.name && gas.name.trim()) || 
                      'ไม่ระบุชื่อ';
+    
+    console.log('gasLabel determined as:', gasLabel);
     
     // ใช้ Switch Alert สำหรับการลบแก๊ส
     const confirmed = await showSwitchAlert({
@@ -1119,15 +1130,7 @@ export default function Config() {
           <option value="Ω">Ω</option>
         </select>
       ) },
-      { key: "alarm", title: "Warning/Alarm", dataIndex: "alarm", render: (r) => <NumberField value={r.alarm ?? 80} onChange={(e) => setGases(gases.map(g => g.id === r.id ? { ...g, alarm: Number(e.target.value) || 80 } : g))} className="w-24" /> },
-      { key: "actions", title: "Action", dataIndex: "actions", render: (r) => (
-        <button 
-          className="px-2 py-1 bg-red-500 hover:bg-red-600 text-white text-xs rounded"
-          onClick={() => handleDelete(r)}
-        >
-          Delete
-        </button>
-      )}
+      { key: "alarm", title: "Warning/Alarm", dataIndex: "alarm", render: (r) => <NumberField value={r.alarm ?? 80} onChange={(e) => setGases(gases.map(g => g.id === r.id ? { ...g, alarm: Number(e.target.value) || 80 } : g))} className="w-24" /> }
     ],
     add: () => setGases([...gases, { id: Date.now(), key: "", display: "", unit: "", enabled: true, alarm: 80, showCorrected: true }])
   }), [gases]);
@@ -1398,7 +1401,7 @@ export default function Config() {
                 </div>
               }
             >
-        <DataTable cols={cGas.cols} rows={gases} rowKey="id" onDelete={handleDelete} showDelete={false} />
+        <DataTable cols={cGas.cols} rows={gases} rowKey="id" onDelete={handleDelete} showDelete={true} />
       </Section>
           )}
 
